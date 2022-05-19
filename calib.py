@@ -19,15 +19,15 @@ cap = cv2.VideoCapture(0)
 #繰り返しのためのwhile文
 while True:
     #カメラからの画像取得
-    ret, frame = cap.read()
+    ret1, frame = cap.read()
 
     img = frame
     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    #ret, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
 
-    # Find the chess board corners
+    # Find the chess board corners　交点を見つける
     ret, corners = cv2.findChessboardCorners(gray, (7,6),None)
-
-    # If found, add object points, image points (after refining them)
+    # If found, add object points, image points (after refining them)　交点が見つかったなら、描画
     if ret == True:
         objpoints.append(objp)
 
@@ -38,12 +38,21 @@ while True:
         img = cv2.drawChessboardCorners(img, (7,6), corners2,ret)
         cv2.imshow('img',img)
         cv2.waitKey(500)
+        ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
+        """
+        ret：
+        mtx：camera matrix，カメラ行列(内部パラメータ)
+        dist：distortion coefficients，レンズ歪みパラメータ
+        rvecs：rotation vectors，回転ベクトル
+        tvecs：translation vectors，並進ベクトル
+        """
+        print("ret: " + str(ret) + "\nmtx: " + str(mtx) + "\ndist: " + str(dist) + "\nrvecs: " +  str(rvecs) + "\ntvecs: " + str(tvecs))
     #カメラの画像の出力
-    cv2.imshow('camera' , frame)
+    cv2.imshow('camera' , img)
 
     #繰り返し分から抜けるためのif文
     key =cv2.waitKey(10)
-    if key == 27:
+    if key == 27:   #Escで終了
         break
 
 #メモリを解放して終了するためのコマンド
@@ -54,4 +63,5 @@ cv2.destroyAllWindows()
 """
 【参考】
 http://labs.eecs.tottori-u.ac.jp/sd/Member/oyamada/OpenCV/html/py_tutorials/py_calib3d/py_calibration/py_calibration.html
+https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html
 """
