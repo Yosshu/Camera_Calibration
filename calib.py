@@ -21,7 +21,7 @@ while True:
     #カメラからの画像取得
     ret1, frame = cap.read()
 
-    img = frame
+    img = frame.copy()
     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
     #ret, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
 
@@ -29,14 +29,17 @@ while True:
     ret, corners = cv2.findChessboardCorners(gray, (7,6),None)
     # If found, add object points, image points (after refining them)　交点が見つかったなら、描画
     if ret == True:
-        objpoints.append(objp)
+        cv2.imshow('img',img)
+        objpoints.append(objp)      # object point
 
         corners2 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
         imgpoints.append(corners2)
 
+
+        # パラメータの表示
         # Draw and display the corners
         img = cv2.drawChessboardCorners(img, (7,6), corners2,ret)
-        cv2.imshow('img',img)
+        cv2.imshow('drawChessboardCorners',img)
         cv2.waitKey(500)
         ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
         """
@@ -47,6 +50,31 @@ while True:
         tvecs：translation vectors，並進ベクトル
         """
         print("ret: " + str(ret) + "\nmtx: " + str(mtx) + "\ndist: " + str(dist) + "\nrvecs: " +  str(rvecs) + "\ntvecs: " + str(tvecs))
+
+
+
+        # 歪み補正の準備
+        img2 = frame.copy()
+        h,  w = img2.shape[:2]
+        newcameramtx, roi=cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
+
+
+
+        # cv2.undistort() 関数を使う
+        # undistort
+        dst = cv2.undistort(img2, mtx, dist, None, newcameramtx)
+
+        # crop the image
+        x,y,w,h = roi
+        dst = dst[y:y+h, x:x+w]
+        cv2.imwrite('calibresult.png',dst)
+        #カメラの画像の出力
+        cv2.imshow('undistort' , dst)
+
+
+
+
+
     #カメラの画像の出力
     cv2.imshow('camera' , img)
 
