@@ -2,13 +2,15 @@ import numpy as np
 import cv2
 import glob
 
+tate = 7
+yoko = 10
 
 # termination criteria
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
 # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
-objp = np.zeros((6*7,3), np.float32)
-objp[:,:2] = np.mgrid[0:7,0:6].T.reshape(-1,2)
+objp = np.zeros((tate*yoko,3), np.float32)
+objp[:,:2] = np.mgrid[0:yoko,0:tate].T.reshape(-1,2)
 
 # Arrays to store object points and image points from all the images.
 objpoints = [] # 3d point in real world space
@@ -26,10 +28,10 @@ while True:
     #ret, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
 
     # Find the chess board corners　交点を見つける
-    ret, corners = cv2.findChessboardCorners(gray, (7,6),None)
+    ret, corners = cv2.findChessboardCorners(gray, (yoko,tate),None)
     # If found, add object points, image points (after refining them)　交点が見つかったなら、描画
     if ret == True:
-        cv2.imshow('img',img)
+        cv2.imshow('frame',frame)
         objpoints.append(objp)      # object point
 
         corners2 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
@@ -38,7 +40,7 @@ while True:
 
         # パラメータの表示
         # Draw and display the corners
-        img = cv2.drawChessboardCorners(img, (7,6), corners2,ret)
+        img = cv2.drawChessboardCorners(img, (yoko,tate), corners2,ret)
         cv2.imshow('drawChessboardCorners',img)
         cv2.waitKey(500)
         ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
@@ -49,7 +51,7 @@ while True:
         rvecs：rotation vectors，回転ベクトル
         tvecs：translation vectors，並進ベクトル
         """
-        print("ret: " + str(ret) + "\nmtx: " + str(mtx) + "\ndist: " + str(dist) + "\nrvecs: " +  str(rvecs) + "\ntvecs: " + str(tvecs))
+        print("ret: " + str(ret) + "\nmtx: " + str(mtx) + "\ndist: " + str(dist) + "\nrvecs: " +  str(rvecs[-1]) + "\ntvecs: " + str(tvecs[-1]))
 
 
 
@@ -57,7 +59,7 @@ while True:
         img2 = frame.copy()
         h,  w = img2.shape[:2]
         newcameramtx, roi=cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
-
+        print()
 
 
         # cv2.undistort() 関数を使う
@@ -67,7 +69,8 @@ while True:
         # crop the image
         x,y,w,h = roi
         dst = dst[y:y+h, x:x+w]
-        cv2.imwrite('calibresult.png',dst)
+        cv2.imwrite('frame.png',frame)
+        cv2.imwrite('undistort.png',dst)
         #カメラの画像の出力
         cv2.imshow('undistort' , dst)
 
@@ -82,12 +85,12 @@ while True:
             mean_error += error
         print( "total error: {}".format(mean_error/len(objpoints)) )    # 0に近ければ近いほど良い
 
-        print()
+        print("\n\n")
 
 
 
     #カメラの画像の出力
-    cv2.imshow('camera' , img)
+    cv2.imshow('camera' , frame)
 
     #繰り返し分から抜けるためのif文
     key =cv2.waitKey(10)
