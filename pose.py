@@ -5,14 +5,14 @@ import os
 
 
 # 3次元座標を描画
-"""
+
 def draw(img, corners, imgpts):
-    corner = tuple(corners[0].ravel())
-    img = cv2.line(img, corner, tuple(imgpts[0].ravel()), (255,0,0), 5)
-    img = cv2.line(img, corner, tuple(imgpts[1].ravel()), (0,255,0), 5)
-    img = cv2.line(img, corner, tuple(imgpts[2].ravel()), (0,0,255), 5)
+    #corner = tuple(corners[0].ravel())
+    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[0][0][0]), int(imgpts[0][0][1])), (255,0,0), 5)   # x
+    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[1][0][0]), int(imgpts[1][0][1])), (0,255,0), 5)   # y
+    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[2][0][0]), int(imgpts[2][0][1])), (0,0,255), 5)   # z
     return img
-"""
+
 
 tate = 7
 yoko = 10
@@ -48,14 +48,14 @@ while True:
         cv2.imshow('frame',frame)
         objpoints.append(objp)      # object point
 
-        corners2 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
+        corners2 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria) # 精度を上げている
         imgpoints.append(corners2)
 
 
         # パラメータの表示
         # Draw and display the corners
         img = cv2.drawChessboardCorners(img, (yoko,tate), corners2,ret2)
-        cv2.imshow('drawChessboardCorners',img)
+        #cv2.imshow('drawChessboardCorners',img)
         cv2.waitKey(500)
         ret3, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
         """
@@ -65,10 +65,18 @@ while True:
         rvecs：rotation vectors，回転ベクトル
         tvecs：translation vectors，並進ベクトル
         """
-        print("ret: " + str(ret3) + "\nmtx: " + str(mtx) + "\ndist: " + str(dist) + "\nrvecs: " +  str(rvecs[-1]) + "\ntvecs: " + str(tvecs[-1]))
-        print()
+        #print("ret: " + str(ret3) + "\nmtx: " + str(mtx) + "\ndist: " + str(dist) + "\nrvecs: " +  str(rvecs[-1]) + "\ntvecs: " + str(tvecs[-1]))
+        #print()
 
-        img_axes = cv2.drawFrameAxes(img_axes, mtx, dist, rvecs[-1], tvecs[-1], 3, 3)
+
+        # 軸の定義
+        axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
+        # project 3D points to image plane
+
+
+        imgpts, jac = cv2.projectPoints(axis, rvecs[-1], tvecs[-1], mtx, dist)
+        img_axes = draw(img_axes,corners2,imgpts)
+        # img_axes = cv2.drawFrameAxes(img_axes, mtx, dist, rvecs[-1], tvecs[-1], 3, 3)
         cv2.imshow('Axes',img_axes)
         cv2.imwrite('axes.png',img_axes)
 
@@ -84,23 +92,6 @@ while True:
 #メモリを解放して終了するためのコマンド
 cap.release()
 cv2.destroyAllWindows()
-"""
-# 軸の定義
-axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
-# project 3D points to image plane
-
-
-#imgpts, jac = cv2.projectPoints(axis, rvecs[-1], tvecs[-1], mtx, dist)
-#img_axes = draw(img_axes,corners2,imgpts)
-# ↑cv2.projectPoints()だとうまくいかなかった
-
-
-img_axes = cv2.drawFrameAxes(img_axes, mtx, dist, rvecs[-1], tvecs[-1], 3, 3)
-cv2.imshow('Axes',img_axes)
-k = cv2.waitKey(0) & 0xff
-if k == 's':
-    cv2.destroyAllWindows()
-"""
 
 
 
