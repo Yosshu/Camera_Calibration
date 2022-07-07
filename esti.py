@@ -14,6 +14,10 @@ def draw(img, corners, imgpts):
     img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[2][0][0]), int(imgpts[2][0][1])), (0,0,255), 5)   # z Red
     return img
 
+# 画像のどこをクリックしたか返す
+def onMouse(event, x, y, flags, params):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        print(x, y)
 
 # termination criteria
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
@@ -71,7 +75,6 @@ if ret and ret2 == True:
     #print("ret: " + str(ret) + "\nmtx: " + str(mtx) + "\ndist: " + str(dist) + "\nrvecs: " +  str(rvecs[-1]) + "\ntvecs: " + str(tvecs[-1]))
 
 
-
     # 軸の定義
     axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
     # project 3D points to image plane
@@ -86,6 +89,8 @@ if ret and ret2 == True:
     img_axes2 = draw(img_axes2,corners22,imgpts2)
     # img_axes = cv2.drawFrameAxes(img_axes, mtx, dist, rvecs[-1], tvecs[-1], 3, 3)
     cv2.imshow('Axes2',img_axes2)
+
+    cv2.setMouseCallback('Axes', onMouse)
 
 
 #繰り返し分から抜けるためのif文
