@@ -8,6 +8,9 @@ import pyautogui
 tate = 7
 yoko = 10
 
+#カメラの設定　デバイスIDは0
+cap = cv2.VideoCapture(0)
+
 
 # 3次元座標を描画
 def draw(img, corners, imgpts):
@@ -21,54 +24,82 @@ def draw(img, corners, imgpts):
 def onMouse(event, x, y, flags, params):
     global mtx, mtx2, tvecs, tvecs2, R, R2, img_axes2
     if event == cv2.EVENT_LBUTTONDOWN:
+        
         obj_i1x = x                                                         # 対象物の1カメ画像座標　クリックした点
         obj_i1y = y
         obj_n1x = (obj_i1x - mtx[0][2]) / mtx[0][0]                         # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
         obj_n1y = (obj_i1y - mtx[1][2]) / mtx[1][1]
         obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換　(x_normimg, y_normimg, 1)
-        obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))      # ncoordを世界座標系に変換              Ｗ = Ｒ^T (Ｃ1 - ｔ)
+        #obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))      # ncoordを世界座標系に変換              Ｗ = Ｒ^T (Ｃ1 - ｔ)
+        obj_w = (R.T) @ (np.array(obj_n1) - np.array(tvecs))
 
         obj_c2 = np.array(R2) @ np.array(obj_w) + np.array(tvecs2)          # wcoordを2カメのカメラ座標系に変換     Ｃ2 = ＲＷ + ｔ
+        """
         obj_n2x = obj_c2[0][0][0]/obj_c2[0][2][0]                           # ccoord2を2カメの正規化画像座標系に変換　(Xc/Zc, Yc/Zc, 1)
         obj_n2y = obj_c2[0][1][0]/obj_c2[0][2][0]
         obj_i2x = obj_n2x * mtx2[0][0] + mtx2[0][2]                         # 正規化画像座標を2カメの画像座標系に変換　焦点距離を掛けてから，原点を左上にする
         obj_i2y = obj_n2y * mtx2[1][1] + mtx2[1][2]
-        #print(rvecs)
-        #print(R)
+        """
+        obj_i2 = mtx2 @ (obj_c2/obj_c2[0][2])
 
 
-        camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
+
+        #camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
+        camera1_w = (R.T) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
         camera1_c2 = np.array(R2) @ camera1_w + np.array(tvecs)                         # 2カメを原点としたカメラ座標系での1カメの位置
+        """
         camera1_n2 = camera1_c2 / camera1_c2[0][2][0]                                   # 2カメの正規化画像座標系での1カメの位置
         camera1_i2x = camera1_n2[0][0][0] * mtx2[0][0] + mtx2[0][2]                     # 2カメの画像座標系での1カメの位置
         camera1_i2y = camera1_n2[0][1][0] * mtx2[1][1] + mtx2[1][2]
+        """
+        camera1_i2 = mtx2 @ (camera1_c2/camera1_c2[0][2])
 
         img_line = img_axes2.copy()
 
-        slope = (camera1_i2y - obj_i2y)/(camera1_i2x - obj_i2x)
+        slope = (camera1_i2[0][1] - obj_i2[0][1])/(camera1_i2[0][0] - obj_i2[0][0])
 
         #if camera1_c2 - obj_i2y > camera1_i2x - obj_i2x:
 
 
         a = 0
-        dx = -1 * camera1_i2x - a
+        dx = -1 * camera1_i2[0][0] - a
         dy = slope * dx
 
         #koko
-        dx2 = -1 * camera1_i2x + 640 + a
+        dx2 = -1 * camera1_i2[0][0] + 640 + a
         dy2 = slope * dx2
         #kookmade
 
-        img_line = cv2.line(img_line, (int(camera1_i2x + dx), int(camera1_i2y + dy)), (int(camera1_i2x + dx2), int(camera1_i2y + dy2)), (0,255,255), 5)
+        img_line = cv2.line(img_line, (int(camera1_i2[0][0] + dx), int(camera1_i2[0][1] + dy)), (int(camera1_i2[0][0] + dx2), int(camera1_i2[0][1] + dy2)), (0,255,255), 5)
         #img_line = cv2.line(img_line, (int(camera1_i2x + dx), int(camera1_i2y + dy)), (int(obj_i2x - dx), int(obj_i2y - dy)), (0,255,255), 5)
         cv2.imshow('Axes2',img_line)
         #print(int(obj_i2x), int(obj_i2y))
 
-        print((int(camera1_i2x + dx), int(camera1_i2y + dy)), (int(camera1_i2x + dx2), int(camera1_i2y + dy2)))
-        
+        #print((int(camera1_i2[0][0] + dx), int(camera1_i2[0][1] + dy)), (int(camera1_i2[0][0] + dx2), int(camera1_i2[0][1] + dy2)))
 
 
+pic_count = 0
+while True:
+    #カメラからの画像取得
+    _, frame = cap.read()
 
+    #カメラの画像の出力
+    cv2.imshow('camera' , frame)
+
+    key =cv2.waitKey(1)
+    if key == ord('s'):
+        gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+        _, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
+        # Find the chess board corners　交点を見つける
+        ret, corners = cv2.findChessboardCorners(img_otsu, (yoko,tate),None)
+        if ret == True:
+            pic_count += 1
+            cv2.imwrite(str(pic_count) + '.png',frame)
+            if pic_count == 2:
+                break
+#メモリを解放して終了するためのコマンド
+cap.release()
+cv2.destroyAllWindows()
 
 
 # termination criteria
@@ -117,9 +148,6 @@ if ret and ret2 == True:
     cv2.waitKey(500)
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
     ret2, mtx2, dist2, rvecs2, tvecs2 = cv2.calibrateCamera(objpoints, imgpoints2, gray2.shape[::-1],None,None)
-
-
-
 
 
     # 回転行列を3×1から3×3に変換
