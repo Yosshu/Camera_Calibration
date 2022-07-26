@@ -21,81 +21,50 @@ def draw(img, corners, imgpts):
     img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[0][0][0]), int(imgpts[0][0][1])), (255,0,0), 5)   # x Blue
     img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[1][0][0]), int(imgpts[1][0][1])), (0,255,0), 5)   # y Green
     img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[2][0][0]), int(imgpts[2][0][1])), (0,0,255), 5)   # z Red
-    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[3][0][0]), int(imgpts[3][0][1])), (255,0,255), 5)   # z Red
+    #img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[3][0][0]), int(imgpts[3][0][1])), (255,0,255), 5)   # z Red
     return img
 
 
 # 画像のどこをクリックしたか返す
 def onMouse(event, x, y, flags, params):
-    global mtx, mtx2, tvecs, tvecs2, R, R2, img_axes2, click1, startpoint_i2, goalpoint_i2
+    global mtx, mtx2, tvecs, tvecs2, R, R2, img_axes2, click1, startpoint_i2y, goalpoint_i2y, slope_i2, obj_i2
     if event == cv2.EVENT_LBUTTONDOWN:
         click1 = 1
-        obj_i1x = x                                                         # 対象物の1カメ画像座標　クリックした点
+        obj_i1x = x                                                             # 対象物の1カメ画像座標　クリックした点
         obj_i1y = y
-        obj_n1x = (obj_i1x - mtx[0][2]) / mtx[0][0]                         # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
+        obj_n1x = (obj_i1x - mtx[0][2]) / mtx[0][0]                             # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
         obj_n1y = (obj_i1y - mtx[1][2]) / mtx[1][1]
-        obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換　(x_normimg, y_normimg, 1)
-        #obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))      # ncoordを世界座標系に変換              Ｗ = Ｒ^T (Ｃ1 - ｔ)
-        obj_w = (R.T) @ (np.array(obj_n1) - np.array(tvecs))
-
-        """
-        obj_c2 = np.array(R2) @ np.array(obj_w) + np.array(tvecs2)          # wcoordを2カメのカメラ座標系に変換     Ｃ2 = ＲＷ + ｔ
-        obj_i2 = mtx2 @ (obj_c2/obj_c2[0][2])
-        """
-
-
+        obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
+        #obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
+        obj_w = (R.T) @ (np.array(obj_n1) - np.array(tvecs))                    # obj_n1を世界座標系に変換              Ｗ = Ｒ^T (Ｃ1 - ｔ)
+        obj_c2 = np.array(R2) @ np.array(obj_w) + np.array(tvecs2)              # obj_wを2カメのカメラ座標系に変換     Ｃ2 = ＲＷ + ｔ
+        obj_i2 = mtx2 @ (obj_c2/obj_c2[0][2])                                   # obj_c2を2カメの画像座標に変換
+        
         #camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
-        camera1_w = (R.T) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
-        """
-        camera1_c2 = np.array(R2) @ camera1_w + np.array(tvecs)                         # 2カメを原点としたカメラ座標系での1カメの位置
-        camera1_i2 = mtx2 @ (camera1_c2/camera1_c2[0][2])
+        camera1_w = (R.T) @ (np.array([[0], [0], [0]]) - np.array(tvecs))       # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
+        camera1_c2 = np.array(R2) @ camera1_w + np.array(tvecs2)                 # 2カメのカメラ座標系での1カメの位置
+        camera1_i2 = mtx2 @ (camera1_c2/camera1_c2[0][2])                       # 2カメの画像座標系での1カメの位置
 
         img_line = img_axes2.copy()
+        slope_i2 = (camera1_i2[0][1] - obj_i2[0][1])/(camera1_i2[0][0] - obj_i2[0][0])  # 傾き
 
-        slope = (camera1_i2[0][1] - obj_i2[0][1])/(camera1_i2[0][0] - obj_i2[0][0])
-        """
-        img_line = img_axes2.copy()
+        startpoint_i2y  = slope_i2*(0                    - obj_i2[0][0]) + obj_i2[0][1]
+        goalpoint_i2y   = slope_i2*(img_axes2.shape[1]   - obj_i2[0][0]) + obj_i2[0][1]
 
-        slopexy_w = (obj_w[0][1]-camera1_w[0][1])/(obj_w[0][0]-camera1_w[0][0])
-        slopexz_w = (obj_w[0][2]-camera1_w[0][2])/(obj_w[0][0]-camera1_w[0][0])
-
-        dx = 1000
-        dy = slopexy_w * dx
-        dz = slopexz_w * dx
+        img_line = cv2.line(img_line, (0, int(startpoint_i2y)), (img_axes2.shape[1], int(goalpoint_i2y)), (0,255,255), 5)
         
-        startpoint_w = copy.deepcopy(camera1_w)
-        """
-        startpoint_w[0][0] += dx
-        startpoint_w[0][1] += dy
-        startpoint_w[0][2] += dz
-        """
-        
-
-        goalpoint_w = copy.deepcopy(obj_w)
-        goalpoint_w[0][0] += dx
-        goalpoint_w[0][1] += dy
-        goalpoint_w[0][2] += dz
-
-        startpoint_c2 = np.array(R2) @ startpoint_w + np.array(tvecs)                         # 2カメを原点としたカメラ座標系での1カメの位置
-        startpoint_i2 = mtx2 @ (startpoint_c2/startpoint_c2[0][2])
-
-        goalpoint_c2 = np.array(R2) @ goalpoint_w + np.array(tvecs)                         # 2カメを原点としたカメラ座標系での1カメの位置
-        goalpoint_i2 = mtx2 @ (goalpoint_c2/goalpoint_c2[0][2])
-
-        img_line = cv2.line(img_line, (int(startpoint_i2[0][0]), int(startpoint_i2[0][1])), (int(goalpoint_i2[0][0]), int(goalpoint_i2[0][1])), (0,255,255), 5)
         cv2.imshow('Axes2',img_line)
 
 
 def onMouse2(event, x, y, flags, params):
-    global mtx2, R2, tvecs2, startpoint_i2, goalpoint_i2
+    global mtx2, R2, tvecs2, slope_i2, obj_i2
     if event == cv2.EVENT_LBUTTONDOWN and click1 == 1:
-        slope_i2 = (int(goalpoint_i2[0][1]) - int(startpoint_i2[0][1])) / (int(goalpoint_i2[0][0]) - int(startpoint_i2[0][0]))
-        obj2_i2y = slope_i2 * x - slope_i2 * int(startpoint_i2[0][0]) + int(startpoint_i2[0][1])
+        obj2_i2y = slope_i2*(x - obj_i2[0][0]) + obj_i2[0][1]
         obj2_n2x = (x - mtx2[0][2]) / mtx2[0][0]
         obj2_n2y = (obj2_i2y - mtx2[1][2]) / mtx2[1][1]
         obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
         obj2_w = (R2.T) @ (np.array(obj2_n2) - np.array(tvecs2))
-        print(obj2_w[0])
+        print(obj2_w)
         print()
 
 
@@ -187,7 +156,8 @@ if ret and ret2 == True:
 
 
     # 軸の定義
-    axis = np.float32([[3,0,0], [0,3,0], [0,0,-3], [6.5,4.5,0]]).reshape(-1,3)
+    axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
+    #axis = np.float32([[3,0,0], [0,3,0], [0,0,-3], [6.5,4.5,0]]).reshape(-1,3)
     # project 3D points to image plane
 
 
