@@ -61,9 +61,12 @@ def distance_2lines(line1, line2):
 
     q1[0]=-q1[0]
     q1[1]=-q1[1]
+    #q1[2]=-q1[2]
 
     q2[0]=-q2[0]
     q2[1]=-q2[1]
+    #q2[2]=-q2[2]
+    
 
     return np.linalg.norm(q2 - q1), q1, q2
 
@@ -110,9 +113,9 @@ def onMouse2(event, x, y, flags, params):
         obj2_n2x = (x - mtx2[0][2]) / mtx2[0][0]
         obj2_n2y = (obj2_i2y - mtx2[1][2]) / mtx2[1][1]
         obj2_n2 = [[obj2_n2x], [obj2_n2y[0]], [1]]
-        obj2_w = (np.array(R2.T)) @ (np.array(obj2_n2) + np.array(tvecs2))
+        obj2_w = (np.array(R2.T)) @ (np.array(obj2_n2) - np.array(tvecs2))
 
-        camera2_w = (R2.T) @ (np.array([[0], [0], [0]]) + np.array(tvecs2))       # 2カメのワールド座標        Ｗ = Ｒ^T (Ｃ2 - ｔ)
+        camera2_w = (R2.T) @ (np.array([[0], [0], [0]]) - np.array(tvecs2))       # 2カメのワールド座標        Ｗ = Ｒ^T (Ｃ2 - ｔ)
 
         line1 = np.hstack((camera1_w[0].T, obj_w[0].T)).reshape(2, 3)
         line2 = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
