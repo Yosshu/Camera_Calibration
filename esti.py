@@ -25,9 +25,53 @@ def draw(img, corners, imgpts):
     return img
 
 
+def distance_2lines(line1, line2):
+    '''
+    直線同士の最接近距離と最接近点
+    return 直線間の距離, line1上の最近接点、line2上の最近接点
+    '''
+    line1 = [np.array(line1[0]),np.array(line1[1])]
+    line2 = [np.array(line2[0]),np.array(line2[1])]
+
+    if abs(np.linalg.norm(line1[1]))<0.0000001:
+        return None,None,None
+    if abs(np.linalg.norm(line2[1]))<0.0000001:
+        return None,None,None
+
+    p1 = line1[0]
+    p2 = line2[0]
+
+    v1 = line1[1] / np.linalg.norm(line1[1])
+    v2 = line2[1] / np.linalg.norm(line2[1])
+
+    d1 = np.dot(p2 - p1,v1)
+    d2 = np.dot(p2 - p1,v2)
+    dv = np.dot(v1,v2)
+
+    if (abs(abs(dv) - 1) < 0.0000001):
+        v = np.cross(p2 - p1,v1)
+        return np.linalg.norm(v),None,None
+
+    t1 = (d1 - d2 * dv) / (1 - dv * dv)
+    t2 = (d2 - d1 * dv) / (dv * dv - 1)
+
+    #外挿を含む最近接点
+    q1 = p1 + t1 * v1
+    q2 = p2 + t2 * v2
+
+    q1[0]=-q1[0]
+    q1[1]=-q1[1]
+
+    q2[0]=-q2[0]
+    q2[1]=-q2[1]
+
+    return np.linalg.norm(q2 - q1), q1, q2
+
+
+
 # 画像のどこをクリックしたか返す
 def onMouse(event, x, y, flags, params):
-    global mtx, mtx2, tvecs, tvecs2, R, R2, img_axes2, click1, startpoint_i2y, goalpoint_i2y, slope_i2, obj_i2
+    global mtx, mtx2, tvecs, tvecs2, R, R2, img_axes2, click1, startpoint_i2y, goalpoint_i2y, slope_i2, obj_i2, img_line, camera1_w , obj_w
     if event == cv2.EVENT_LBUTTONDOWN:
         click1 = 1
         obj_i1x = x                                                             # 対象物の1カメ画像座標　クリックした点
@@ -57,14 +101,23 @@ def onMouse(event, x, y, flags, params):
 
 
 def onMouse2(event, x, y, flags, params):
-    global mtx2, R2, tvecs2, slope_i2, obj_i2
+    global mtx2, R2, tvecs2, slope_i2, obj_i2, img_line, camera1_w, obj_w
     if event == cv2.EVENT_LBUTTONDOWN and click1 == 1:
+        img_line2 = img_line.copy()
         obj2_i2y = slope_i2*(x - obj_i2[0][0]) + obj_i2[0][1]
+        cv2.circle(img_line2, (x,int(obj2_i2y)), 8, (0, 165, 255), thickness=-1)
+        cv2.imshow('Axes2',img_line2)
         obj2_n2x = (x - mtx2[0][2]) / mtx2[0][0]
         obj2_n2y = (obj2_i2y - mtx2[1][2]) / mtx2[1][1]
-        obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
-        obj2_w = (R2.T) @ (np.array(obj2_n2) - np.array(tvecs2))
-        print(obj2_w)
+        obj2_n2 = [[obj2_n2x], [obj2_n2y[0]], [1]]
+        obj2_w = (np.array(R2.T)) @ (np.array(obj2_n2) + np.array(tvecs2))
+
+        camera2_w = (R2.T) @ (np.array([[0], [0], [0]]) + np.array(tvecs2))       # 2カメのワールド座標        Ｗ = Ｒ^T (Ｃ2 - ｔ)
+
+        line1 = np.hstack((camera1_w[0].T, obj_w[0].T)).reshape(2, 3)
+        line2 = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
+        res = distance_2lines(line1,line2)
+        print(res)
         print()
 
 
