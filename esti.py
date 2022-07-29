@@ -25,15 +25,16 @@ class Estimation:
         self.dist2 = dist2
         self.rvecs2 = rvecs2
         self.tvecs2 = tvecs2
-        self.img_axes2 = img_axes2
-        self.slope_i2 = 0
-
+        
         # 回転行列を3×1から3×3に変換
         self.R, _ = cv2.Rodrigues(np.array(self.rvecs))
         self.R2, _ = cv2.Rodrigues(np.array(self.rvecs2))
 
         self.click1 = 0     # 1枚目の画像をクリックしたか
 
+        # 関数間で共有したい変数
+        self.img_axes2 = img_axes2
+        self.slope_i2 = 0
         self.img_line = []
         self.obj_i2 = []
         self.camera1_w = []
@@ -81,9 +82,14 @@ class Estimation:
         q2[0]=-q2[0]
         q2[1]=-q2[1]
         #q2[2]=-q2[2]
-        
 
-        return np.linalg.norm(q2 - q1), q1, q2
+        # xyz座標の候補が2つあるため，平均をとる
+        q3x = (q1[0]+q2[0])
+        q3y = (q1[1]+q2[1])
+        q3z = (q1[2]+q2[2])
+        
+        #return np.linalg.norm(q2 - q1), q1, q2
+        return (q3x, q3y, q3z)
 
 
     # 画像のどこをクリックしたか返す
@@ -119,12 +125,28 @@ class Estimation:
     def onMouse2(self, event, x, y, flags, params):
         if event == cv2.EVENT_LBUTTONDOWN and self.click1 == 1:
             img_line2 = self.img_line.copy()
-            obj2_i2y = self.slope_i2*(x - self.obj_i2[0][0]) + self.obj_i2[0][1]
-            cv2.circle(img_line2, (x,int(obj2_i2y)), 8, (0, 165, 255), thickness=-1)
+            option_y = self.slope_i2*(x - self.obj_i2[0][0][0]) + self.obj_i2[0][1][0]    # クリックされたx座標から線のy座標を求める
+            option_y = option_y[0]  # 何故か配列になっているため[]をはずす
+            if self.slope_i2 != 0:  # 線の傾きが0でないなら，
+                option_x = (y - self.obj_i2[0][1][0])/self.slope_i2 + self.obj_i2[0][0][0]    # クリックされたy座標から線のx座標を求める
+                option_x = option_x[0]  # 同じく何故か配列になっているため[]をはずす
+                diff1 = abs(option_y - y)   # それぞれの差を求める
+                diff2 = abs(option_x - x)
+                if diff1 <= diff2:  # 差が小さい方を画像座標として採用する
+                    obj2_i2x = x
+                    obj2_i2y = option_y
+                else:
+                    obj2_i2x = option_x
+                    obj2_i2y = y
+            else:   # 線の傾きが0なら，y座標が求められないから，xとoption_yを画像座標として採用
+                obj2_i2x = x
+                obj2_i2y = option_y
+
+            cv2.circle(img_line2, (int(obj2_i2x),int(obj2_i2y)), 8, (0, 165, 255), thickness=-1)
             cv2.imshow('Axes2',img_line2)
-            obj2_n2x = (x - self.mtx2[0][2]) / self.mtx2[0][0]
+            obj2_n2x = (obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]
             obj2_n2y = (obj2_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
-            obj2_n2 = [[obj2_n2x], [obj2_n2y[0]], [1]]
+            obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
             obj2_w = (np.array(self.R2.T)) @ (np.array(obj2_n2) - np.array(self.tvecs2))
 
             camera2_w = (self.R2.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs2))       # 2カメのワールド座標        Ｗ = Ｒ^T (Ｃ2 - ｔ)
