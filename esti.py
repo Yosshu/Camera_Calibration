@@ -41,6 +41,78 @@ class Estimation:
         self.obj_w = []
 
 
+    # 画像のどこをクリックしたか返す
+    def onMouse(self, event, x, y, flags, params):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.Image1to2(x,y)
+
+    def onMouse2(self, event, x, y, flags, params):
+        if event == cv2.EVENT_LBUTTONDOWN and self.click1 == 1:
+            self.Image2to1(x,y)
+            
+    def Image1to2(self, x, y):
+        self.click1 = 1
+        obj_i1x = x                                                             # 対象物の1カメ画像座標　クリックした点
+        obj_i1y = y
+        obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                             # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
+        obj_n1y = (obj_i1y - self.mtx[1][2]) / self.mtx[1][1]
+        obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
+        #self.obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
+        self.obj_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                    # obj_n1を世界座標系に変換              Ｗ = Ｒ^T (Ｃ1 - ｔ)
+        obj_c2 = np.array(self.R2) @ np.array(self.obj_w) + np.array(self.tvecs2)              # obj_wを2カメのカメラ座標系に変換     Ｃ2 = ＲＷ + ｔ
+        self.obj_i2 = self.mtx2 @ (obj_c2/obj_c2[0][2])                                   # obj_c2を2カメの画像座標に変換
+        
+        #self.camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
+        self.camera1_w = (self.R.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))       # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
+        camera1_c2 = np.array(self.R2) @ self.camera1_w + np.array(self.tvecs2)                 # 2カメのカメラ座標系での1カメの位置
+        camera1_i2 = self.mtx2 @ (camera1_c2/camera1_c2[0][2])                       # 2カメの画像座標系での1カメの位置
+
+        self.img_line = self.img_axes2.copy()
+        self.slope_i2 = (camera1_i2[0][1] - self.obj_i2[0][1])/(camera1_i2[0][0] - self.obj_i2[0][0])  # 傾き
+
+        startpoint_i2y  = self.slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]
+        goalpoint_i2y   = self.slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]
+
+        self.img_line = cv2.line(self.img_line, (0, int(startpoint_i2y)), (self.img_axes2.shape[1], int(goalpoint_i2y)), (0,255,255), 5)
+        
+        cv2.imshow('Axes2', self.img_line)
+
+
+    def Image2to1(self, x, y):
+        img_line2 = self.img_line.copy()
+        option_y = self.slope_i2*(x - self.obj_i2[0][0][0]) + self.obj_i2[0][1][0]    # クリックされたx座標から線のy座標を求める
+        option_y = option_y[0]  # 何故か配列になっているため[]をはずす
+        if self.slope_i2 != 0:  # 線の傾きが0でないなら，
+            option_x = (y - self.obj_i2[0][1][0])/self.slope_i2 + self.obj_i2[0][0][0]    # クリックされたy座標から線のx座標を求める
+            option_x = option_x[0]  # 同じく何故か配列になっているため[]をはずす
+            diff1 = abs(option_y - y)   # それぞれの差を求める
+            diff2 = abs(option_x - x)
+            if diff1 <= diff2:  # 差が小さい方を画像座標として採用する
+                obj2_i2x = x
+                obj2_i2y = option_y
+            else:
+                obj2_i2x = option_x
+                obj2_i2y = y
+        else:   # 線の傾きが0なら，y座標が求められないから，xとoption_yを画像座標として採用
+            obj2_i2x = x
+            obj2_i2y = option_y
+
+        cv2.circle(img_line2, (int(obj2_i2x),int(obj2_i2y)), 8, (0, 165, 255), thickness=-1)
+        cv2.imshow('Axes2',img_line2)
+        obj2_n2x = (obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]
+        obj2_n2y = (obj2_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
+        obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
+        obj2_w = (np.array(self.R2.T)) @ (np.array(obj2_n2) - np.array(self.tvecs2))
+
+        camera2_w = (self.R2.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs2))       # 2カメのワールド座標        Ｗ = Ｒ^T (Ｃ2 - ｔ)
+
+        line1 = np.hstack((self.camera1_w[0].T, self.obj_w[0].T)).reshape(2, 3)
+        line2 = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
+        res = self.distance_2lines(line1,line2)
+        print(res)
+        print()
+
+
     def distance_2lines(self, line1, line2):
         '''
         直線同士の最接近距離と最接近点
@@ -91,71 +163,6 @@ class Estimation:
         #return np.linalg.norm(q2 - q1), q1, q2
         return (q3x, q3y, q3z)
 
-
-    # 画像のどこをクリックしたか返す
-    def onMouse(self, event, x, y, flags, params):
-        if event == cv2.EVENT_LBUTTONDOWN:
-            self.click1 = 1
-            obj_i1x = x                                                             # 対象物の1カメ画像座標　クリックした点
-            obj_i1y = y
-            obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                             # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
-            obj_n1y = (obj_i1y - self.mtx[1][2]) / self.mtx[1][1]
-            obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
-            #self.obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
-            self.obj_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                    # obj_n1を世界座標系に変換              Ｗ = Ｒ^T (Ｃ1 - ｔ)
-            obj_c2 = np.array(self.R2) @ np.array(self.obj_w) + np.array(self.tvecs2)              # obj_wを2カメのカメラ座標系に変換     Ｃ2 = ＲＷ + ｔ
-            self.obj_i2 = self.mtx2 @ (obj_c2/obj_c2[0][2])                                   # obj_c2を2カメの画像座標に変換
-            
-            #self.camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
-            self.camera1_w = (self.R.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))       # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
-            camera1_c2 = np.array(self.R2) @ self.camera1_w + np.array(self.tvecs2)                 # 2カメのカメラ座標系での1カメの位置
-            camera1_i2 = self.mtx2 @ (camera1_c2/camera1_c2[0][2])                       # 2カメの画像座標系での1カメの位置
-
-            self.img_line = self.img_axes2.copy()
-            self.slope_i2 = (camera1_i2[0][1] - self.obj_i2[0][1])/(camera1_i2[0][0] - self.obj_i2[0][0])  # 傾き
-
-            startpoint_i2y  = self.slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]
-            goalpoint_i2y   = self.slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]
-
-            self.img_line = cv2.line(self.img_line, (0, int(startpoint_i2y)), (self.img_axes2.shape[1], int(goalpoint_i2y)), (0,255,255), 5)
-            
-            cv2.imshow('Axes2', self.img_line)
-
-
-    def onMouse2(self, event, x, y, flags, params):
-        if event == cv2.EVENT_LBUTTONDOWN and self.click1 == 1:
-            img_line2 = self.img_line.copy()
-            option_y = self.slope_i2*(x - self.obj_i2[0][0][0]) + self.obj_i2[0][1][0]    # クリックされたx座標から線のy座標を求める
-            option_y = option_y[0]  # 何故か配列になっているため[]をはずす
-            if self.slope_i2 != 0:  # 線の傾きが0でないなら，
-                option_x = (y - self.obj_i2[0][1][0])/self.slope_i2 + self.obj_i2[0][0][0]    # クリックされたy座標から線のx座標を求める
-                option_x = option_x[0]  # 同じく何故か配列になっているため[]をはずす
-                diff1 = abs(option_y - y)   # それぞれの差を求める
-                diff2 = abs(option_x - x)
-                if diff1 <= diff2:  # 差が小さい方を画像座標として採用する
-                    obj2_i2x = x
-                    obj2_i2y = option_y
-                else:
-                    obj2_i2x = option_x
-                    obj2_i2y = y
-            else:   # 線の傾きが0なら，y座標が求められないから，xとoption_yを画像座標として採用
-                obj2_i2x = x
-                obj2_i2y = option_y
-
-            cv2.circle(img_line2, (int(obj2_i2x),int(obj2_i2y)), 8, (0, 165, 255), thickness=-1)
-            cv2.imshow('Axes2',img_line2)
-            obj2_n2x = (obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]
-            obj2_n2y = (obj2_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
-            obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
-            obj2_w = (np.array(self.R2.T)) @ (np.array(obj2_n2) - np.array(self.tvecs2))
-
-            camera2_w = (self.R2.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs2))       # 2カメのワールド座標        Ｗ = Ｒ^T (Ｃ2 - ｔ)
-
-            line1 = np.hstack((self.camera1_w[0].T, self.obj_w[0].T)).reshape(2, 3)
-            line2 = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
-            res = self.distance_2lines(line1,line2)
-            print(res)
-            print()
 
 
 def main():
