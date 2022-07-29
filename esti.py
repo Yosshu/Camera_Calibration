@@ -32,7 +32,7 @@ class Estimation:
 
         self.click1 = 0     # 1枚目の画像をクリックしたか
 
-        # 関数間で共有したい変数
+        # クラス内の関数間で共有したい変数
         self.img_axes2 = img_axes2
         self.slope_i2 = 0
         self.img_line = []
@@ -41,17 +41,19 @@ class Estimation:
         self.obj_w = []
 
 
-    # 画像のどこをクリックしたか返す
     def onMouse(self, event, x, y, flags, params):
         if event == cv2.EVENT_LBUTTONDOWN:
             self.Image1to2(x,y)
+            cv2.imshow('Axes2', self.img_line)
 
     def onMouse2(self, event, x, y, flags, params):
         if event == cv2.EVENT_LBUTTONDOWN and self.click1 == 1:
-            self.Image2to1(x,y)
+            res = self.Image2to1(x,y)
+            print(f'{res}\n')
             
     def Image1to2(self, x, y):
         self.click1 = 1
+        print(x,y)
         obj_i1x = x                                                             # 対象物の1カメ画像座標　クリックした点
         obj_i1y = y
         obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                             # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
@@ -74,8 +76,6 @@ class Estimation:
         goalpoint_i2y   = self.slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]
 
         self.img_line = cv2.line(self.img_line, (0, int(startpoint_i2y)), (self.img_axes2.shape[1], int(goalpoint_i2y)), (0,255,255), 5)
-        
-        cv2.imshow('Axes2', self.img_line)
 
 
     def Image2to1(self, x, y):
@@ -97,7 +97,7 @@ class Estimation:
             obj2_i2x = x
             obj2_i2y = option_y
 
-        cv2.circle(img_line2, (int(obj2_i2x),int(obj2_i2y)), 8, (0, 165, 255), thickness=-1)
+        cv2.circle(img_line2, (int(obj2_i2x),int(obj2_i2y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
         cv2.imshow('Axes2',img_line2)
         obj2_n2x = (obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]
         obj2_n2y = (obj2_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
@@ -109,8 +109,7 @@ class Estimation:
         line1 = np.hstack((self.camera1_w[0].T, self.obj_w[0].T)).reshape(2, 3)
         line2 = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
         res = self.distance_2lines(line1,line2)
-        print(res)
-        print()
+        return res
 
 
     def distance_2lines(self, line1, line2):
@@ -162,6 +161,30 @@ class Estimation:
         
         #return np.linalg.norm(q2 - q1), q1, q2
         return (q3x, q3y, q3z)
+
+
+    def ScaleFactor(self, imgpoints, imgpoints2, tate, yoko):
+        stdpoints = []
+        stdpoints2 = []
+        imgpoints_ravel = np.ravel(imgpoints)   # 1行に並べる，点の選択後に直す
+        imgpoints2_ravel = np.ravel(imgpoints2)
+        for i in range(32):      # cv2.findChessboardCornersで見つけた原点と原点付近の点(合わせて16個の点)の画像座標を配列に保管
+                k = int(i/8)*2*yoko + (i%8)   # 4点分(x,yで2要素ずつ)まで行ったら次の行
+                stdpoints = np.append(stdpoints, imgpoints_ravel[k])
+                stdpoints2 = np.append(stdpoints2, imgpoints_ravel[k])
+        stdpoints = stdpoints.reshape([16, 2])  # (x,y)を16個の形に直す
+        
+        """
+        # 確認用
+        # この関数の引数の定義にimgを入れて，main関数内のScaleFactor()の引数にimg_axes2を追加すれば，原点と原点付近の点が選択されていることが確認できる
+        for i in stdpoints:
+            print(i,int(i[0]),int(i[1]))
+            cv2.circle(img, (int(i[0]),int(i[1])), 8, (255, 0, 255), thickness=-1)
+            cv2.imshow('stdpoints', img)
+        """
+        
+        
+            
 
 
 
@@ -272,6 +295,7 @@ def main():
         cv2.imshow('Axes2',img_axes2)
         
         es = Estimation(mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2)
+        es.ScaleFactor(imgpoints, imgpoints2, tate, yoko)
         cv2.setMouseCallback('Axes', es.onMouse)
         cv2.setMouseCallback('Axes2', es.onMouse2)
 
