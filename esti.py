@@ -9,56 +9,55 @@ import copy
 # 3次元座標を描画
 def draw(img, corners, imgpts):
     #corner = tuple(corners[0].ravel())
-    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[0][0][0]), int(imgpts[0][0][1])), (255,0,0), 5)   # x Blue
-    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[1][0][0]), int(imgpts[1][0][1])), (0,255,0), 5)   # y Green
-    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[2][0][0]), int(imgpts[2][0][1])), (0,0,255), 5)   # z Red
-    #img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[3][0][0]), int(imgpts[3][0][1])), (255,0,255), 5)   # z Red
+    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[0][0][0]), int(imgpts[0][0][1])), (255,0,0), 5)   # X軸 Blue
+    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[1][0][0]), int(imgpts[1][0][1])), (0,255,0), 5)   # Y軸 Green
+    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[2][0][0]), int(imgpts[2][0][1])), (0,0,255), 5)   # Z軸 Red
     return img
 
 class Estimation:
     def __init__(self, mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2):
-        self.mtx = mtx
-        self.dist = dist
-        self.rvecs = rvecs
-        self.tvecs = tvecs
-        self.mtx2 = mtx2
-        self.dist2 = dist2
-        self.rvecs2 = rvecs2
-        self.tvecs2 = tvecs2
+        self.mtx = mtx          # 1カメの内部パラメータ
+        self.dist = dist        # 　〃　　歪み係数
+        self.rvecs = rvecs      # 　〃　　回転ベクトル
+        self.tvecs = tvecs      # 　〃　　並進ベクトル
+        self.mtx2 = mtx2        # 2カメの　内部パラメータ
+        self.dist2 = dist2      # 　〃　　歪み係数
+        self.rvecs2 = rvecs2    # 　〃　　回転ベクトル
+        self.tvecs2 = tvecs2    # 　〃　　並進ベクトル
         
-        # 回転行列を3×1から3×3に変換
+        # 回転ベクトルを3×1から3×3に変換
         self.R, _ = cv2.Rodrigues(np.array(self.rvecs))
         self.R2, _ = cv2.Rodrigues(np.array(self.rvecs2))
 
-        self.click1 = 0     # 1枚目の画像をクリックしたか
+        self.click1 = 0     # 1カメの画像をクリックしたか
 
         # クラス内の関数間で共有したい変数
-        self.img_axes2 = img_axes2
-        self.slope_i2 = 0           # self.slope_i2 と slope_i2は違う
-        self.img_line = []
-        self.obj_i2 = []
-        self.camera1_w = []
-        self.obj_w = []
-        self.SF = []
+        self.img_axes2 = img_axes2  # 軸だけ描画された1カメの画像
+        self.slope_i2 = 0           # 1カメの画像をクリックした時の2カメの画像に描画された線の傾き（self.slope_i2 と slope_i2は違う）
+        self.img_line = []          # 黄色の線を引いた2カメの画像
+        self.obj_w = []             # 1カメの画像座標（1カメの画像をクリックした点）→1カメの正規化画像座標→ワールド座標（self.obj_w）
+        self.obj_i2 = []            # 1カメの画像座標（1カメの画像をクリックした点）→1カメの正規化画像座標→ワールド座標→2カメの正規化画像座標→2カメの画像座標（self.obj_i2）
+        self.camera1_w = []         # 1カメのワールド座標
+        self.SF = []                # スケールファクタ [X軸方向, Y軸方向, Z軸方向]
 
 
-    def onMouse(self, event, x, y, flags, params):
-        if event == cv2.EVENT_LBUTTONDOWN:
-            self.slope_i2 = self.Image1to2(x,y)
-            cv2.imshow('Axes2', self.img_line)
-            self.click1 = 1
+    def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
+        if event == cv2.EVENT_LBUTTONDOWN:          # 1カメ画像を左クリックしたら，
+            self.slope_i2 = self.Image1to2(x,y)     # 1カメ画像でのクリックされた点が2カメ画像ではどのような線になるのかを求める
+            cv2.imshow('Axes2', self.img_line)      # 2カメ画像に黄色の線を描画
+            self.click1 = 1                         #  1カメの画像をクリックしたことを伝える
 
-    def onMouse2(self, event, x, y, flags, params):
-        if event == cv2.EVENT_LBUTTONDOWN and self.click1 == 1:
+    def onMouse2(self, event, x, y, flags, params):     # 2カメの画像に対するクリックイベント
+        if event == cv2.EVENT_LBUTTONDOWN and self.click1 == 1:     # 1カメ画像が既にクリックされていて，2カメ画像をクリックしたら，
             res, img_line2 = self.Image2to1(x,y,self.slope_i2)
-            cv2.imshow('Axes2',img_line2)
-            result = [0,0,0]
-            result[0] = res[0]/self.SF[0]
+            cv2.imshow('Axes2',img_line2)           # 2カメ画像の線上のどの点を選んだかをオレンジの点で描画
+            result = [0,0,0]                        # 結果として出力するワールド座標値を定義
+            result[0] = res[0]/self.SF[0]           # スケールファクタで割る
             result[1] = res[1]/self.SF[1]
             result[2] = res[2]/self.SF[2]
-            print(f'{result}\n')
+            print(f'{result}\n')                    # 最終結果であるワールド座標を出力
             
-    def Image1to2(self, x, y):
+    def Image1to2(self, x, y):      # 1カメ画像の点から2カメ画像のエピポーラ線を求める関数
         obj_i1x = x                                                             # 対象物の1カメ画像座標　クリックした点
         obj_i1y = y
         obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                             # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
@@ -74,8 +73,8 @@ class Estimation:
         camera1_c2 = np.array(self.R2) @ self.camera1_w + np.array(self.tvecs2)                 # 2カメのカメラ座標系での1カメの位置
         camera1_i2 = self.mtx2 @ (camera1_c2/camera1_c2[0][2])                       # 2カメの画像座標系での1カメの位置
 
-        self.img_line = self.img_axes2.copy()
-        slope_i2 = (camera1_i2[0][1] - self.obj_i2[0][1])/(camera1_i2[0][0] - self.obj_i2[0][0])  # 傾き
+        self.img_line = self.img_axes2.copy()       # img_axes2に上書きしたくないから，複製したものを用意
+        slope_i2 = (camera1_i2[0][1] - self.obj_i2[0][1])/(camera1_i2[0][0] - self.obj_i2[0][0])  # 線の傾き
 
         startpoint_i2y  = slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]
         goalpoint_i2y   = slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]
@@ -84,7 +83,7 @@ class Estimation:
         return slope_i2
 
 
-    def Image2to1(self, x, y, slope_i2):
+    def Image2to1(self, x, y, slope_i2):    # 2カメ画像のエピポーラ線上の1点を指定することでその場所のワールド座標を求める関数（まだ1マスが1にはなってない）
         img_line2 = self.img_line.copy()
         option_y = slope_i2*(x - self.obj_i2[0][0][0]) + self.obj_i2[0][1][0]    # クリックされたx座標から線のy座標を求める
         option_y = option_y[0]  # 何故か配列になっているため[]をはずす
@@ -104,7 +103,7 @@ class Estimation:
             obj2_i2y = option_y
 
         cv2.circle(img_line2, (int(obj2_i2x),int(obj2_i2y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
-        obj2_n2x = (obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]
+        obj2_n2x = (obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]       # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る   
         obj2_n2y = (obj2_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
         obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
         obj2_w = (np.array(self.R2.T)) @ (np.array(obj2_n2) - np.array(self.tvecs2))
@@ -117,7 +116,7 @@ class Estimation:
         return res, img_line2
 
 
-    def distance_2lines(self, line1, line2):
+    def distance_2lines(self, line1, line2):    # 直線同士の最接近距離と最接近点を求める関数
         '''
         直線同士の最接近距離と最接近点
         return 直線間の距離, line1上の最近接点、line2上の最近接点
@@ -170,8 +169,8 @@ class Estimation:
 
     def ScaleFactor(self, imgpoints, imgpoints2, tate, yoko):
         stdside = 4         # 原点を含む正方形の点群を基準点として使う，stdsideはその正方形の一辺の個数
-        stdpoints = []      # 1枚目の画像の基準点の保管
-        stdpoints2 = []     # 2枚目の画像の基準点の保管
+        stdpoints = []      # 1カメの画像の基準点の保管
+        stdpoints2 = []     # 2カメの画像の基準点の保管
         imgpoints_ravel = np.ravel(imgpoints)   # 1行に並べる，点の選択後に直す
         imgpoints2_ravel = np.ravel(imgpoints2)
         for i in range(stdside*stdside*2):      # cv2.findChessboardCornersで見つけた原点と原点付近の点の画像座標を配列に保管
@@ -349,4 +348,7 @@ https://docs.opencv.org/4.x/d7/d53/tutorial_py_pose.html
 
 画像座標系からカメラ座標系への変換
 https://mem-archive.com/2018/10/13/post-682/
+
+直線同士の最接近点
+https://phst.hateblo.jp/entry/2020/02/29/000000
 """
