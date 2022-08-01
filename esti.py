@@ -34,26 +34,31 @@ class Estimation:
 
         # クラス内の関数間で共有したい変数
         self.img_axes2 = img_axes2
-        self.slope_i2 = 0
+        self.slope_i2 = 0           # self.slope_i2 と slope_i2は違う
         self.img_line = []
         self.obj_i2 = []
         self.camera1_w = []
         self.obj_w = []
+        self.SF = []
 
 
     def onMouse(self, event, x, y, flags, params):
         if event == cv2.EVENT_LBUTTONDOWN:
-            self.Image1to2(x,y)
+            self.slope_i2 = self.Image1to2(x,y)
             cv2.imshow('Axes2', self.img_line)
+            self.click1 = 1
 
     def onMouse2(self, event, x, y, flags, params):
         if event == cv2.EVENT_LBUTTONDOWN and self.click1 == 1:
-            res = self.Image2to1(x,y)
-            print(f'{res}\n')
+            res, img_line2 = self.Image2to1(x,y,self.slope_i2)
+            cv2.imshow('Axes2',img_line2)
+            result = [0,0,0]
+            result[0] = res[0]/self.SF[0]
+            result[1] = res[1]/self.SF[1]
+            result[2] = res[2]/self.SF[2]
+            print(f'{result}\n')
             
     def Image1to2(self, x, y):
-        self.click1 = 1
-        print(x,y)
         obj_i1x = x                                                             # 対象物の1カメ画像座標　クリックした点
         obj_i1y = y
         obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                             # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
@@ -70,20 +75,21 @@ class Estimation:
         camera1_i2 = self.mtx2 @ (camera1_c2/camera1_c2[0][2])                       # 2カメの画像座標系での1カメの位置
 
         self.img_line = self.img_axes2.copy()
-        self.slope_i2 = (camera1_i2[0][1] - self.obj_i2[0][1])/(camera1_i2[0][0] - self.obj_i2[0][0])  # 傾き
+        slope_i2 = (camera1_i2[0][1] - self.obj_i2[0][1])/(camera1_i2[0][0] - self.obj_i2[0][0])  # 傾き
 
-        startpoint_i2y  = self.slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]
-        goalpoint_i2y   = self.slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]
+        startpoint_i2y  = slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]
+        goalpoint_i2y   = slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]
 
         self.img_line = cv2.line(self.img_line, (0, int(startpoint_i2y)), (self.img_axes2.shape[1], int(goalpoint_i2y)), (0,255,255), 5)
+        return slope_i2
 
 
-    def Image2to1(self, x, y):
+    def Image2to1(self, x, y, slope_i2):
         img_line2 = self.img_line.copy()
-        option_y = self.slope_i2*(x - self.obj_i2[0][0][0]) + self.obj_i2[0][1][0]    # クリックされたx座標から線のy座標を求める
+        option_y = slope_i2*(x - self.obj_i2[0][0][0]) + self.obj_i2[0][1][0]    # クリックされたx座標から線のy座標を求める
         option_y = option_y[0]  # 何故か配列になっているため[]をはずす
-        if self.slope_i2 != 0:  # 線の傾きが0でないなら，
-            option_x = (y - self.obj_i2[0][1][0])/self.slope_i2 + self.obj_i2[0][0][0]    # クリックされたy座標から線のx座標を求める
+        if slope_i2 != 0:  # 線の傾きが0でないなら，
+            option_x = (y - self.obj_i2[0][1][0])/slope_i2 + self.obj_i2[0][0][0]    # クリックされたy座標から線のx座標を求める
             option_x = option_x[0]  # 同じく何故か配列になっているため[]をはずす
             diff1 = abs(option_y - y)   # それぞれの差を求める
             diff2 = abs(option_x - x)
@@ -98,7 +104,6 @@ class Estimation:
             obj2_i2y = option_y
 
         cv2.circle(img_line2, (int(obj2_i2x),int(obj2_i2y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
-        cv2.imshow('Axes2',img_line2)
         obj2_n2x = (obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]
         obj2_n2y = (obj2_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
         obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
@@ -109,7 +114,7 @@ class Estimation:
         line1 = np.hstack((self.camera1_w[0].T, self.obj_w[0].T)).reshape(2, 3)
         line2 = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
         res = self.distance_2lines(line1,line2)
-        return res
+        return res, img_line2
 
 
     def distance_2lines(self, line1, line2):
@@ -154,37 +159,58 @@ class Estimation:
         q2[1]=-q2[1]
         #q2[2]=-q2[2]
 
-        # xyz座標の候補が2つあるため，平均をとる
+        # XYZ座標の候補が2つあるため，平均をとる
         q3x = (q1[0]+q2[0])
         q3y = (q1[1]+q2[1])
         q3z = (q1[2]+q2[2])
         
         #return np.linalg.norm(q2 - q1), q1, q2
-        return (q3x, q3y, q3z)
+        return ([q3x, q3y, q3z])
 
 
     def ScaleFactor(self, imgpoints, imgpoints2, tate, yoko):
-        stdpoints = []
-        stdpoints2 = []
+        stdside = 4         # 原点を含む正方形の点群を基準点として使う，stdsideはその正方形の一辺の個数
+        stdpoints = []      # 1枚目の画像の基準点の保管
+        stdpoints2 = []     # 2枚目の画像の基準点の保管
         imgpoints_ravel = np.ravel(imgpoints)   # 1行に並べる，点の選択後に直す
         imgpoints2_ravel = np.ravel(imgpoints2)
-        for i in range(32):      # cv2.findChessboardCornersで見つけた原点と原点付近の点(合わせて16個の点)の画像座標を配列に保管
-                k = int(i/8)*2*yoko + (i%8)   # 4点分(x,yで2要素ずつ)まで行ったら次の行
+        for i in range(stdside*stdside*2):      # cv2.findChessboardCornersで見つけた原点と原点付近の点の画像座標を配列に保管
+                k = int(i/(stdside*2))*2*yoko + (i%(stdside*2))   # stdside個目の点(x,yで2要素ずつ)まで行ったら次の行
                 stdpoints = np.append(stdpoints, imgpoints_ravel[k])
-                stdpoints2 = np.append(stdpoints2, imgpoints_ravel[k])
-        stdpoints = stdpoints.reshape([16, 2])  # (x,y)を16個の形に直す
-        
+                stdpoints2 = np.append(stdpoints2, imgpoints2_ravel[k])
+        stdpoints = stdpoints.reshape([stdside*stdside, 2])  # (x,y)をstdsideの2乗個の形に直す
+        stdpoints2 = stdpoints2.reshape([stdside*stdside, 2])
         """
         # 確認用
         # この関数の引数の定義にimgを入れて，main関数内のScaleFactor()の引数にimg_axes2を追加すれば，原点と原点付近の点が選択されていることが確認できる
         for i in stdpoints:
-            print(i,int(i[0]),int(i[1]))
             cv2.circle(img, (int(i[0]),int(i[1])), 8, (255, 0, 255), thickness=-1)
             cv2.imshow('stdpoints', img)
         """
+        std_w = []
+        for i in range(stdside*stdside):
+            stdslope = self.Image1to2(stdpoints[i][0], stdpoints[i][1])
+            stdres, _ = self.Image2to1(stdpoints2[i][0], stdpoints2[i][1], stdslope)
+            std_w.append(stdres)
         
+        std_diffx = []
+        for i in range(stdside):     # X軸方向
+            for j in range(stdside-1):
+                k = i*4 + j
+                std_diffx.append(std_w[k+1][0] - std_w[k][0])
+        SFx = np.mean(std_diffx)
+
+        std_diffy = []
+        for i in range(stdside-1):     # Y軸方向
+            for j in range(stdside):
+                k = i * stdside + j
+                std_diffy.append(std_w[k+stdside][1] - std_w[k][1])
+        SFy = np.mean(std_diffy)
+
+        SFz = (SFx+SFy)/2
         
-            
+        self.SF = [SFx, SFy, SFz]
+
 
 
 
