@@ -6,8 +6,7 @@ import pyautogui
 import copy
 
 
-# 3次元座標を描画
-def draw(img, corners, imgpts):
+def draw(img, corners, imgpts):         # 座標軸を描画する関数
     #corner = tuple(corners[0].ravel())
     img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[0][0][0]), int(imgpts[0][0][1])), (255,0,0), 5)   # X軸 Blue
     img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[1][0][0]), int(imgpts[1][0][1])), (0,255,0), 5)   # Y軸 Green
@@ -64,23 +63,23 @@ class Estimation:
         obj_n1y = (obj_i1y - self.mtx[1][2]) / self.mtx[1][1]
         obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
         #self.obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
-        self.obj_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                    # obj_n1を世界座標系に変換              Ｗ = Ｒ^T (Ｃ1 - ｔ)
-        obj_c2 = np.array(self.R2) @ np.array(self.obj_w) + np.array(self.tvecs2)              # obj_wを2カメのカメラ座標系に変換     Ｃ2 = ＲＷ + ｔ
+        self.obj_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                    # obj_n1を世界座標系に変換              Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+        obj_c2 = np.array(self.R2) @ np.array(self.obj_w) + np.array(self.tvecs2)              # obj_wを2カメのカメラ座標系に変換     Ｃ2 = Ｒ2Ｗ + ｔ2
         self.obj_i2 = self.mtx2 @ (obj_c2/obj_c2[0][2])                                   # obj_c2を2カメの画像座標に変換
         
-        #self.camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
-        self.camera1_w = (self.R.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))       # 1カメのワールド座標        Ｗ = Ｒ^T (Ｃ1 - ｔ)
+        #self.camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+        self.camera1_w = (self.R.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))       # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
         camera1_c2 = np.array(self.R2) @ self.camera1_w + np.array(self.tvecs2)                 # 2カメのカメラ座標系での1カメの位置
         camera1_i2 = self.mtx2 @ (camera1_c2/camera1_c2[0][2])                       # 2カメの画像座標系での1カメの位置
 
         self.img_line = self.img_axes2.copy()       # img_axes2に上書きしたくないから，複製したものを用意
         slope_i2 = (camera1_i2[0][1] - self.obj_i2[0][1])/(camera1_i2[0][0] - self.obj_i2[0][0])  # 線の傾き
 
-        startpoint_i2y  = slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]
-        goalpoint_i2y   = slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]
+        startpoint_i2y  = slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]           # エピポーラ線の2カメ画像の左端のy座標を求める
+        goalpoint_i2y   = slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]      # エピポーラ線の2カメ画像の右端のy座標を求める
 
-        self.img_line = cv2.line(self.img_line, (0, int(startpoint_i2y)), (self.img_axes2.shape[1], int(goalpoint_i2y)), (0,255,255), 5)
-        return slope_i2
+        self.img_line = cv2.line(self.img_line, (0, int(startpoint_i2y)), (self.img_axes2.shape[1], int(goalpoint_i2y)), (0,255,255), 5)    # エピポーラ線を引く
+        return slope_i2     # この関数内で求まった傾きを返す（self.slope_i2はonMouse()内で更新されるため，self.slope_i2はクリックした時限定の傾き）
 
 
     def Image2to1(self, x, y, slope_i2):    # 2カメ画像のエピポーラ線上の1点を指定することでその場所のワールド座標を求める関数（まだ1マスが1にはなってない）
@@ -106,9 +105,9 @@ class Estimation:
         obj2_n2x = (obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]       # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る   
         obj2_n2y = (obj2_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
         obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
-        obj2_w = (np.array(self.R2.T)) @ (np.array(obj2_n2) - np.array(self.tvecs2))
+        obj2_w = (np.array(self.R2.T)) @ (np.array(obj2_n2) - np.array(self.tvecs2))    # obj_n2を世界座標系に変換              Ｗ = Ｒ2^T (Ｃ2 - ｔ)
 
-        camera2_w = (self.R2.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs2))       # 2カメのワールド座標        Ｗ = Ｒ^T (Ｃ2 - ｔ)
+        camera2_w = (self.R2.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs2))       # 2カメのワールド座標        Ｗ = Ｒ2^T (Ｃ2 - ｔ)
 
         line1 = np.hstack((self.camera1_w[0].T, self.obj_w[0].T)).reshape(2, 3)
         line2 = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
@@ -167,7 +166,7 @@ class Estimation:
         return ([q3x, q3y, q3z])
 
 
-    def ScaleFactor(self, imgpoints, imgpoints2, tate, yoko):
+    def ScaleFactor(self, imgpoints, imgpoints2, tate, yoko):       # スケールファクタを求める関数
         stdside = 4         # 原点を含む正方形の点群を基準点として使う，stdsideはその正方形の一辺の個数
         stdpoints = []      # 1カメの画像の基準点の保管
         stdpoints2 = []     # 2カメの画像の基準点の保管
@@ -186,7 +185,7 @@ class Estimation:
             cv2.circle(img, (int(i[0]),int(i[1])), 8, (255, 0, 255), thickness=-1)
             cv2.imshow('stdpoints', img)
         """
-        std_w = []
+        std_w = []          # 全ての基準点のワールド座標を格納する配列
         for i in range(stdside*stdside):
             stdslope = self.Image1to2(stdpoints[i][0], stdpoints[i][1])
             stdres, _ = self.Image2to1(stdpoints2[i][0], stdpoints2[i][1], stdslope)
@@ -197,16 +196,16 @@ class Estimation:
             for j in range(stdside-1):
                 k = i*4 + j
                 std_diffx.append(std_w[k+1][0] - std_w[k][0])
-        SFx = np.mean(std_diffx)
+        SFx = np.mean(std_diffx)    # 差の平均
 
         std_diffy = []
         for i in range(stdside-1):     # Y軸方向
             for j in range(stdside):
                 k = i * stdside + j
                 std_diffy.append(std_w[k+stdside][1] - std_w[k][1])
-        SFy = np.mean(std_diffy)
+        SFy = np.mean(std_diffy)    # 差の平均
 
-        SFz = (SFx+SFy)/2
+        SFz = (SFx+SFy)/2   # X軸方向とY軸方向の平均
         
         self.SF = [SFx, SFy, SFz]
 
@@ -217,29 +216,8 @@ def main():
     # 検出するチェッカーボードの交点の数
     tate = 7
     yoko = 10
-    pic_count = 0
-    cap = cv2.VideoCapture(0)   #カメラの設定　デバイスIDは0
-    while True:
-        #カメラからの画像取得
-        _, frame = cap.read()
-        #カメラの画像の出力
-        cv2.imshow('camera' , frame)
-        key =cv2.waitKey(1)
-        if key == ord('s'):
-            gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
-            _, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
-            # Find the chess board corners　交点を見つける
-            ret, corners = cv2.findChessboardCorners(img_otsu, (yoko,tate),None)
-            if ret == True:
-                pic_count += 1
-                cv2.imwrite(str(pic_count) + '.png',frame)
-                if pic_count == 2:
-                    break
-    #メモリを解放して終了するためのコマンド
-    cap.release()
-    cv2.destroyAllWindows()
-
-
+    pic_count = 0       # 何枚写真を撮ったか
+    axes0_count = 0
     # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -251,6 +229,53 @@ def main():
     objpoints = [] # 3d point in real world space
     imgpoints = [] # 2d points in image plane.
     imgpoints2 = [] # 2d points in image plane.
+
+    objpoints0 = []
+    imgpoints0 = []
+    img_axes0 = []
+    imgpts0 = []
+    corners02 = []
+
+    # 軸の定義
+    axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
+
+    cap = cv2.VideoCapture(0)   #カメラの設定　デバイスIDは0
+    while True:
+        #カメラからの画像取得
+        _, frame = cap.read()
+        if axes0_count == 0:
+            cv2.imshow('camera' , frame)
+        else:
+            img_axes0 = frame.copy()
+            img_axes0 = draw(img_axes0,corners02,imgpts0)
+            cv2.imshow('camera' , img_axes0)
+        key =cv2.waitKey(1)
+        if key == ord('s'):
+            gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+            _, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
+            # Find the chess board corners　交点を見つける
+            ret, corners = cv2.findChessboardCorners(img_otsu, (yoko,tate),None)
+            if ret == True:
+                pic_count += 1
+                cv2.imwrite(str(pic_count) + '.png',frame)
+                if pic_count == 2:
+                    break 
+        elif key == ord('a'):
+            axes0_count = 1
+            gray0 = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+            ret0, corners0 = cv2.findChessboardCorners(gray0, (yoko,tate),None)
+            if ret0 == True:
+                objpoints0.append(objp)      # object point
+                corners02 = cv2.cornerSubPix(gray0,corners0,(11,11),(-1,-1),criteria) # 精度を上げている
+                imgpoints0.append(corners02)
+                cv2.waitKey(500)
+                ret0, mtx0, dist0, rvecs0, tvecs0 = cv2.calibrateCamera(objpoints0, imgpoints0, gray0.shape[::-1],None,None)
+                imgpts0, _ = cv2.projectPoints(axis, rvecs0[-1], tvecs0[-1], mtx0, dist0)
+        elif key == 27:   #Escで終了
+            cv2.destroyAllWindows()
+    #メモリを解放して終了するためのコマンド
+    cap.release()
+    cv2.destroyAllWindows()
 
     frame = cv2.imread('1.png')  #queryimage # left image
     frame2 = cv2.imread('2.png')  #queryimage # left image
@@ -302,13 +327,9 @@ def main():
             imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], mtx, dist)
             error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2)/len(imgpoints2)
             mean_error += error
-        print( "total error: {}".format(mean_error/len(objpoints)) )    # 0に近ければ近いほど良い
+        #print( "total error: {}".format(mean_error/len(objpoints)) )    # 0に近ければ近いほど良い
 
-        # 軸の定義
-        axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
-        #axis = np.float32([[3,0,0], [0,3,0], [0,0,-3], [6.5,4.5,0]]).reshape(-1,3)
         # project 3D points to image plane
-
         imgpts, jac = cv2.projectPoints(axis, rvecs[-1], tvecs[-1], mtx, dist)
         img_axes = draw(img_axes,corners12,imgpts)
         # img_axes = cv2.drawFrameAxes(img_axes, mtx, dist, rvecs[-1], tvecs[-1], 3, 3)
@@ -320,9 +341,9 @@ def main():
         cv2.imshow('Axes2',img_axes2)
         
         es = Estimation(mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2)
-        es.ScaleFactor(imgpoints, imgpoints2, tate, yoko)
-        cv2.setMouseCallback('Axes', es.onMouse)
-        cv2.setMouseCallback('Axes2', es.onMouse2)
+        es.ScaleFactor(imgpoints, imgpoints2, tate, yoko)   # スケールファクタを求める
+        cv2.setMouseCallback('Axes', es.onMouse)        # 1カメの画像に対するクリックイベント
+        cv2.setMouseCallback('Axes2', es.onMouse2)      # 2カメの画像に対するクリックイベント
 
 
 
