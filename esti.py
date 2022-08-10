@@ -4,6 +4,7 @@ import cv2
 import glob
 import pyautogui
 import copy
+import math
 
 
 def draw(img, corners, imgpts):         # 座標軸を描画する関数
@@ -14,7 +15,7 @@ def draw(img, corners, imgpts):         # 座標軸を描画する関数
     return img
 
 class Estimation:
-    def __init__(self, mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2):
+    def __init__(self, mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2, imgpoints, imgpoints2, tate, yoko):
         self.mtx = mtx          # 1カメの内部パラメータ
         self.dist = dist        # 　〃　　歪み係数
         self.rvecs = rvecs      # 　〃　　回転ベクトル
@@ -23,6 +24,11 @@ class Estimation:
         self.dist2 = dist2      # 　〃　　歪み係数
         self.rvecs2 = rvecs2    # 　〃　　回転ベクトル
         self.tvecs2 = tvecs2    # 　〃　　並進ベクトル
+
+        self.imgpoints = imgpoints
+        self.imgpoints2 = imgpoints2
+        self.tate = tate
+        self.yoko = yoko
         
         # 回転ベクトルを3×1から3×3に変換
         self.R, _ = cv2.Rodrigues(np.array(self.rvecs))
@@ -38,6 +44,83 @@ class Estimation:
         self.obj_i2 = []            # 1カメの画像座標（1カメの画像をクリックした点）→1カメの正規化画像座標→ワールド座標→2カメの正規化画像座標→2カメの画像座標（self.obj_i2）
         self.camera1_w = []         # 1カメのワールド座標
         self.SF = []                # スケールファクタ [X軸方向, Y軸方向, Z軸方向]
+        self.ori = []               # 本来の原点からのずれ [X軸方向, Y軸方向, Z軸方向]
+
+        h, w = self.img_axes2.shape[:2]
+        self.newcameramtx, _=cv2.getOptimalNewCameraMatrix(self.mtx,self.dist,(w,h),1,(w,h))
+        self.newcameramtx2, _=cv2.getOptimalNewCameraMatrix(self.mtx2,self.dist2,(w,h),1,(w,h))
+
+        self.ScaleFactor()
+
+
+    def ScaleFactor(self):       # スケールファクタを求める関数
+        stdside = 4         # 原点を含む正方形の点群を基準点として使う，stdsideはその正方形の一辺の個数，stdside=1はnp.mean()でエラー出るからダメ，stdside>=2
+        stdpoints = []      # 1カメの画像の基準点の保管
+        stdpoints2 = []     # 2カメの画像の基準点の保管
+        imgpoints_ravel = np.ravel(self.imgpoints)   # 1行に並べる，点の選択後に直す
+        imgpoints2_ravel = np.ravel(self.imgpoints2)
+        for i in range(stdside*stdside*2):      # cv2.findChessboardCornersで見つけた原点と原点付近の点の画像座標を配列に保管
+                k = int(i/(stdside*2))*2*self.yoko + (i%(stdside*2))   # stdside個目の点(x,yで2要素ずつ)まで行ったら次の行
+                stdpoints = np.append(stdpoints, imgpoints_ravel[k])
+                stdpoints2 = np.append(stdpoints2, imgpoints2_ravel[k])
+        stdpoints = stdpoints.reshape([stdside*stdside, 2])  # (x,y)をstdsideの2乗個の形に直す
+        stdpoints2 = stdpoints2.reshape([stdside*stdside, 2])
+
+        """
+        print(se;f.imgpoints[0][7][0])
+        imgptsche, _ = cv2.projectPoints(np.float32([7,0,0]), self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
+        print(imgptsche[0][0])
+        cv2.circle(img, (int(self.imgpoints[0][7][0][0]),int(self.imgpoints[0][7][0][1])), 10, (255, 0, 255), thickness=-1)
+        cv2.circle(img, (int(self.imgptsche[0][0][0]),int(self.imgptsche[0][0][1])), 10, (255, 255, 0), thickness=-1)
+        cv2.imshow('stdpoints', img)
+        """
+
+        """
+        # 確認用
+        # この関数の引数の定義にimgを入れて，main関数内のScaleFactor()の引数にimg_axes2を追加すれば，原点と原点付近の点が選択されていることが確認できる
+        for i in stdpoints:
+            cv2.circle(img, (int(i[0]),int(i[1])), 8, (255, 0, 255), thickness=-1)
+            cv2.imshow('stdpoints', img)
+        """
+        std_w = []          # 全ての基準点のワールド座標を格納する配列
+        for i in range(stdside*stdside):
+            stdslope = self.Image1to2(stdpoints[i][0], stdpoints[i][1])
+            stdres, _ = self.Image2to1(stdpoints2[i][0], stdpoints2[i][1], stdslope)
+            std_w.append(stdres)
+
+        std_diffx = []
+        for i in range(stdside):     # X軸方向
+            for j in range(stdside-1):
+                k = i*stdside + j
+                std_diffx.append(std_w[k+1][0] - std_w[k][0])
+        SFx = np.mean(std_diffx)    # 差の平均
+
+        std_diffy = []
+        for i in range(stdside-1):     # Y軸方向
+            for j in range(stdside):
+                k = i * stdside + j
+                std_diffy.append(std_w[k+stdside][1] - std_w[k][1])
+        SFy = np.mean(std_diffy)    # 差の平均
+
+        SFz =  math.sqrt((SFx**2)+(SFy**2))   # X軸方向とY軸方向の平均
+
+        std_orix = []
+        for i in range(stdside*stdside):
+            std_orix.append(std_w[i][0]-(i%stdside))
+        orix = np.mean(std_orix)
+
+        std_oriy = []
+        for i in range(stdside*stdside):
+            std_oriy.append(std_w[i][1]-(i%stdside))
+        oriy = np.mean(std_oriy)
+
+        std_oriz = []
+        for i in range(stdside*stdside):
+            std_oriz.append(std_w[i][2])
+        oriz = np.mean(std_oriz)
+
+        self.SF = [SFx, SFy, SFz]
+        self.ori = [orix, oriy, oriz]
 
 
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
@@ -57,9 +140,12 @@ class Estimation:
             print(f'{result}\n')                    # 最終結果であるワールド座標を出力
             
     def Image1to2(self, x, y):      # 1カメ画像の点から2カメ画像のエピポーラ線を求める関数
-        obj_i1x = x                                                             # 対象物の1カメ画像座標　クリックした点
+        #undist_i1 = cv2.undistortPoints(np.float32([x,y]), self.mtx, self.dist, None, self.newcameramtx)
+        #obj_i1x = undist_i1[0][0][0]                                            # 対象物の1カメ画像座標　クリックした点
+        #obj_i1y = undist_i1[0][0][1]
+        obj_i1x = x                                            # 対象物の1カメ画像座標　クリックした点
         obj_i1y = y
-        obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                             # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
+        obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
         obj_n1y = (obj_i1y - self.mtx[1][2]) / self.mtx[1][1]
         obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
         #self.obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
@@ -77,7 +163,6 @@ class Estimation:
 
         startpoint_i2y  = slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]           # エピポーラ線の2カメ画像の左端のy座標を求める
         goalpoint_i2y   = slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]      # エピポーラ線の2カメ画像の右端のy座標を求める
-
         self.img_line = cv2.line(self.img_line, (0, int(startpoint_i2y)), (self.img_axes2.shape[1], int(goalpoint_i2y)), (0,255,255), 5)    # エピポーラ線を引く
         return slope_i2     # この関数内で求まった傾きを返す（self.slope_i2はonMouse()内で更新されるため，self.slope_i2はクリックした時限定の傾き）
 
@@ -102,6 +187,9 @@ class Estimation:
             obj2_i2y = option_y
 
         cv2.circle(img_line2, (int(obj2_i2x),int(obj2_i2y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
+        #undist_i2 = cv2.undistortPoints(np.float32([obj2_i2x,obj2_i2y]), self.mtx2, self.dist2, None, self.newcameramtx2)
+        #obj2_i2x = undist_i2[0][0][0]
+        #obj2_i2y = undist_i2[0][0][1]
         obj2_n2x = (obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]       # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る   
         obj2_n2y = (obj2_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
         obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
@@ -150,11 +238,11 @@ class Estimation:
         q2 = p2 + t2 * v2
 
         q1[0]=-q1[0]
-        q1[1]=-q1[1]
+        #q1[1]=-q1[1]
         #q1[2]=-q1[2]
 
         q2[0]=-q2[0]
-        q2[1]=-q2[1]
+        #q2[1]=-q2[1]
         #q2[2]=-q2[2]
 
         # XYZ座標の候補が2つあるため，平均をとる
@@ -164,52 +252,6 @@ class Estimation:
         
         #return np.linalg.norm(q2 - q1), q1, q2
         return ([q3x, q3y, q3z])
-
-
-    def ScaleFactor(self, imgpoints, imgpoints2, tate, yoko):       # スケールファクタを求める関数
-        stdside = 4         # 原点を含む正方形の点群を基準点として使う，stdsideはその正方形の一辺の個数
-        stdpoints = []      # 1カメの画像の基準点の保管
-        stdpoints2 = []     # 2カメの画像の基準点の保管
-        imgpoints_ravel = np.ravel(imgpoints)   # 1行に並べる，点の選択後に直す
-        imgpoints2_ravel = np.ravel(imgpoints2)
-        for i in range(stdside*stdside*2):      # cv2.findChessboardCornersで見つけた原点と原点付近の点の画像座標を配列に保管
-                k = int(i/(stdside*2))*2*yoko + (i%(stdside*2))   # stdside個目の点(x,yで2要素ずつ)まで行ったら次の行
-                stdpoints = np.append(stdpoints, imgpoints_ravel[k])
-                stdpoints2 = np.append(stdpoints2, imgpoints2_ravel[k])
-        stdpoints = stdpoints.reshape([stdside*stdside, 2])  # (x,y)をstdsideの2乗個の形に直す
-        stdpoints2 = stdpoints2.reshape([stdside*stdside, 2])
-        """
-        # 確認用
-        # この関数の引数の定義にimgを入れて，main関数内のScaleFactor()の引数にimg_axes2を追加すれば，原点と原点付近の点が選択されていることが確認できる
-        for i in stdpoints:
-            cv2.circle(img, (int(i[0]),int(i[1])), 8, (255, 0, 255), thickness=-1)
-            cv2.imshow('stdpoints', img)
-        """
-        std_w = []          # 全ての基準点のワールド座標を格納する配列
-        for i in range(stdside*stdside):
-            stdslope = self.Image1to2(stdpoints[i][0], stdpoints[i][1])
-            stdres, _ = self.Image2to1(stdpoints2[i][0], stdpoints2[i][1], stdslope)
-            std_w.append(stdres)
-        
-        std_diffx = []
-        for i in range(stdside):     # X軸方向
-            for j in range(stdside-1):
-                k = i*4 + j
-                std_diffx.append(std_w[k+1][0] - std_w[k][0])
-        SFx = np.mean(std_diffx)    # 差の平均
-
-        std_diffy = []
-        for i in range(stdside-1):     # Y軸方向
-            for j in range(stdside):
-                k = i * stdside + j
-                std_diffy.append(std_w[k+stdside][1] - std_w[k][1])
-        SFy = np.mean(std_diffy)    # 差の平均
-
-        SFz = (SFx+SFy)/2   # X軸方向とY軸方向の平均
-        
-        self.SF = [SFx, SFy, SFz]
-
-
 
 
 def main():
@@ -238,7 +280,7 @@ def main():
 
     # 軸の定義
     axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
-
+    """
     cap = cv2.VideoCapture(0)   #カメラの設定　デバイスIDは0
     while True:
         #カメラからの画像取得
@@ -276,6 +318,7 @@ def main():
     #メモリを解放して終了するためのコマンド
     cap.release()
     cv2.destroyAllWindows()
+    """
 
     frame = cv2.imread('1.png')  #queryimage # left image
     frame2 = cv2.imread('2.png')  #queryimage # left image
@@ -305,8 +348,8 @@ def main():
         imgpoints2.append(corners22)
         # パラメータの表示
         # Draw and display the corners
-        img = cv2.drawChessboardCorners(img, (yoko,tate), corners12,ret)
-        img2 = cv2.drawChessboardCorners(img2, (yoko,tate), corners22,ret2)
+        #img = cv2.drawChessboardCorners(img, (yoko,tate), corners12,ret)
+        #img2 = cv2.drawChessboardCorners(img2, (yoko,tate), corners22,ret2)
         #cv2.imshow('drawChessboardCorners',img)
         cv2.waitKey(500)
         ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
@@ -340,8 +383,7 @@ def main():
         # img_axes = cv2.drawFrameAxes(img_axes, mtx, dist, rvecs[-1], tvecs[-1], 3, 3)
         cv2.imshow('Axes2',img_axes2)
         
-        es = Estimation(mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2)
-        es.ScaleFactor(imgpoints, imgpoints2, tate, yoko)   # スケールファクタを求める
+        es = Estimation(mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2, imgpoints, imgpoints2, tate, yoko)
         cv2.setMouseCallback('Axes', es.onMouse)        # 1カメの画像に対するクリックイベント
         cv2.setMouseCallback('Axes2', es.onMouse2)      # 2カメの画像に対するクリックイベント
 
@@ -362,14 +404,11 @@ if __name__ == "__main__":
 カメラキャリブレーション
 http://labs.eecs.tottori-u.ac.jp/sd/Member/oyamada/OpenCV/html/py_tutorials/py_calib3d/py_calibration/py_calibration.html
 https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html
-
 姿勢推定
 http://labs.eecs.tottori-u.ac.jp/sd/Member/oyamada/OpenCV/html/py_tutorials/py_calib3d/py_pose/py_pose.html#pose-estimation
 https://docs.opencv.org/4.x/d7/d53/tutorial_py_pose.html
-
 画像座標系からカメラ座標系への変換
 https://mem-archive.com/2018/10/13/post-682/
-
 直線同士の最接近点
 https://phst.hateblo.jp/entry/2020/02/29/000000
 """
