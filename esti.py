@@ -25,10 +25,10 @@ class Estimation:
         self.rvecs2 = rvecs2    # 　〃　　回転ベクトル
         self.tvecs2 = tvecs2    # 　〃　　並進ベクトル
 
-        self.imgpoints = imgpoints
-        self.imgpoints2 = imgpoints2
-        self.tate = tate
-        self.yoko = yoko
+        self.imgpoints = imgpoints      # 1カメで見つかったチェッカーボードの交点の画像座標
+        self.imgpoints2 = imgpoints2    # 1カメで               〃
+        self.tate = tate                # 検出するチェッカーボードの交点の縦の数
+        self.yoko = yoko                #               〃              横の数
         
         # 回転ベクトルを3×1から3×3に変換
         self.R, _ = cv2.Rodrigues(np.array(self.rvecs))
@@ -43,18 +43,14 @@ class Estimation:
         self.obj_w = []             # 1カメの画像座標（1カメの画像をクリックした点）→1カメの正規化画像座標→ワールド座標（self.obj_w）
         self.obj_i2 = []            # 1カメの画像座標（1カメの画像をクリックした点）→1カメの正規化画像座標→ワールド座標→2カメの正規化画像座標→2カメの画像座標（self.obj_i2）
         self.camera1_w = []         # 1カメのワールド座標
-        self.SF = []                # スケールファクタ [X軸方向, Y軸方向, Z軸方向]
-        self.ori = []               # 本来の原点からのずれ [X軸方向, Y軸方向, Z軸方向]
+        self.SF = []                # スケールファクタ [X軸座標, Y軸座標, Z軸座標]
+        self.pn = [1, 1, 1]         # 1 or -1，ワールド座標がプラスかマイナスか，出力する直前にかける [X軸座標, Y軸座標, Z軸座標]
 
-        h, w = self.img_axes2.shape[:2]
-        self.newcameramtx, _=cv2.getOptimalNewCameraMatrix(self.mtx,self.dist,(w,h),1,(w,h))
-        self.newcameramtx2, _=cv2.getOptimalNewCameraMatrix(self.mtx2,self.dist2,(w,h),1,(w,h))
-
-        self.ScaleFactor()
+        self.ScaleFactor()      # スケールファクタを求める
 
 
     def ScaleFactor(self):       # スケールファクタを求める関数
-        stdside = 4         # 原点を含む正方形の点群を基準点として使う，stdsideはその正方形の一辺の個数，stdside=1はnp.mean()でエラー出るからダメ，stdside>=2
+        stdside = 3         # 原点を含む正方形の点群を基準点として使う，stdsideはその正方形の一辺の個数，stdside=1はnp.mean()でエラー出るからダメ，stdside>=2
         stdpoints = []      # 1カメの画像の基準点の保管
         stdpoints2 = []     # 2カメの画像の基準点の保管
         imgpoints_ravel = np.ravel(self.imgpoints)   # 1行に並べる，点の選択後に直す
@@ -65,19 +61,8 @@ class Estimation:
                 stdpoints2 = np.append(stdpoints2, imgpoints2_ravel[k])
         stdpoints = stdpoints.reshape([stdside*stdside, 2])  # (x,y)をstdsideの2乗個の形に直す
         stdpoints2 = stdpoints2.reshape([stdside*stdside, 2])
-
-        """
-        print(se;f.imgpoints[0][7][0])
-        imgptsche, _ = cv2.projectPoints(np.float32([7,0,0]), self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
-        print(imgptsche[0][0])
-        cv2.circle(img, (int(self.imgpoints[0][7][0][0]),int(self.imgpoints[0][7][0][1])), 10, (255, 0, 255), thickness=-1)
-        cv2.circle(img, (int(self.imgptsche[0][0][0]),int(self.imgptsche[0][0][1])), 10, (255, 255, 0), thickness=-1)
-        cv2.imshow('stdpoints', img)
-        """
-
         """
         # 確認用
-        # この関数の引数の定義にimgを入れて，main関数内のScaleFactor()の引数にimg_axes2を追加すれば，原点と原点付近の点が選択されていることが確認できる
         for i in stdpoints:
             cv2.circle(img, (int(i[0]),int(i[1])), 8, (255, 0, 255), thickness=-1)
             cv2.imshow('stdpoints', img)
@@ -87,40 +72,50 @@ class Estimation:
             stdslope = self.Image1to2(stdpoints[i][0], stdpoints[i][1])
             stdres, _ = self.Image2to1(stdpoints2[i][0], stdpoints2[i][1], stdslope)
             std_w.append(stdres)
+            print(stdres)
 
+        # X軸方向
         std_diffx = []
-        for i in range(stdside):     # X軸方向
+        for i in range(stdside):
             for j in range(stdside-1):
                 k = i*stdside + j
                 std_diffx.append(std_w[k+1][0] - std_w[k][0])
         SFx = np.mean(std_diffx)    # 差の平均
+        if SFx > 0:
+            self.pn[0] = 1
+        else:
+            self.pn[0] = -1
 
+        # Y軸方向
         std_diffy = []
-        for i in range(stdside-1):     # Y軸方向
+        for i in range(stdside-1):     
             for j in range(stdside):
                 k = i * stdside + j
                 std_diffy.append(std_w[k+stdside][1] - std_w[k][1])
         SFy = np.mean(std_diffy)    # 差の平均
+        if SFy > 0:
+            self.pn[1] = 1
+        else:
+            self.pn[1] = -1
 
-        SFz =  math.sqrt((SFx**2)+(SFy**2))   # X軸方向とY軸方向の平均
-
-        std_orix = []
-        for i in range(stdside*stdside):
-            std_orix.append(std_w[i][0]-(i%stdside))
-        orix = np.mean(std_orix)
-
-        std_oriy = []
-        for i in range(stdside*stdside):
-            std_oriy.append(std_w[i][1]-(i%stdside))
-        oriy = np.mean(std_oriy)
-
-        std_oriz = []
-        for i in range(stdside*stdside):
-            std_oriz.append(std_w[i][2])
-        oriz = np.mean(std_oriz)
+        # Z軸方向
+        stdz_w = []                 
+        for i in range(stdside):
+            stdpointsz, _ = cv2.projectPoints(np.float32([0,0,-i]), self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
+            stdpoints2z, _ = cv2.projectPoints(np.float32([0,0,-i]), self.rvecs2[-1], self.tvecs2[-1], self.mtx2, self.dist2)
+            stdslopez = self.Image1to2(stdpointsz[0][0][0], stdpointsz[0][0][1])
+            stdresz, _ = self.Image2to1(stdpoints2z[0][0][0], stdpoints2z[0][0][1], stdslopez)
+            stdz_w.append(stdresz[2])
+        std_diffz = []
+        for i in range(stdside-1):
+            std_diffz.append(stdz_w[i+1]-stdz_w[i])
+        SFz = np.mean(std_diffz)
+        if SFz > 0:
+            self.pn[2] = 1
+        else:
+            self.pn[2] = -1
 
         self.SF = [SFx, SFy, SFz]
-        self.ori = [orix, oriy, oriz]
 
 
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
@@ -134,9 +129,10 @@ class Estimation:
             res, img_line2 = self.Image2to1(x,y,self.slope_i2)
             cv2.imshow('Axes2',img_line2)           # 2カメ画像の線上のどの点を選んだかをオレンジの点で描画
             result = [0,0,0]                        # 結果として出力するワールド座標値を定義
-            result[0] = res[0]/self.SF[0]           # スケールファクタで割る
-            result[1] = res[1]/self.SF[1]
-            result[2] = res[2]/self.SF[2]
+            print(self.SF)
+            result[0] = (self.pn[0] * res[0]) / self.SF[0]           # スケールファクタで割る
+            result[1] = (self.pn[1] * res[1]) / self.SF[1]
+            result[2] = (self.pn[2] * res[2]) / self.SF[2]
             print(f'{result}\n')                    # 最終結果であるワールド座標を出力
             
     def Image1to2(self, x, y):      # 1カメ画像の点から2カメ画像のエピポーラ線を求める関数
@@ -238,11 +234,11 @@ class Estimation:
         q2 = p2 + t2 * v2
 
         q1[0]=-q1[0]
-        #q1[1]=-q1[1]
+        q1[1]=-q1[1]
         #q1[2]=-q1[2]
 
         q2[0]=-q2[0]
-        #q2[1]=-q2[1]
+        q2[1]=-q2[1]
         #q2[2]=-q2[2]
 
         # XYZ座標の候補が2つあるため，平均をとる
