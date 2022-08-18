@@ -72,7 +72,6 @@ class Estimation:
             stdslope = self.Image1to2(stdpoints[i][0], stdpoints[i][1])
             stdres, _ = self.Image2to1(stdpoints2[i][0], stdpoints2[i][1], stdslope)
             std_w.append(stdres)
-            print(stdres)
 
         # X軸方向
         std_diffx = []
@@ -276,7 +275,7 @@ def main():
 
     # 軸の定義
     axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
-    """
+    
     cap = cv2.VideoCapture(0)   #カメラの設定　デバイスIDは0
     while True:
         #カメラからの画像取得
@@ -314,7 +313,7 @@ def main():
     #メモリを解放して終了するためのコマンド
     cap.release()
     cv2.destroyAllWindows()
-    """
+    
 
     frame = cv2.imread('1.png')  #queryimage # left image
     frame2 = cv2.imread('2.png')  #queryimage # left image
