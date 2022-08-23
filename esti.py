@@ -14,6 +14,20 @@ def draw(img, corners, imgpts):         # 座標軸を描画する関数
     img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[2][0][0]), int(imgpts[2][0][1])), (0,0,255), 5)   # Z軸 Red
     return img
 
+def axes_check(img, tate, yoko, objp, criteria, axis):
+    objpoints0 = []
+    imgpoints0 = []
+    gray0 = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    ret0, corners0 = cv2.findChessboardCorners(gray0, (yoko,tate),None)
+    if ret0 == True:
+        objpoints0.append(objp)      # object point
+        corners02 = cv2.cornerSubPix(gray0,corners0,(11,11),(-1,-1),criteria) # 精度を上げている
+        imgpoints0.append(corners02)
+        cv2.waitKey(500)
+        ret0, mtx0, dist0, rvecs0, tvecs0 = cv2.calibrateCamera(objpoints0, imgpoints0, gray0.shape[::-1],None,None)
+        imgpts0, _ = cv2.projectPoints(axis, rvecs0[-1], tvecs0[-1], mtx0, dist0)
+        return corners02, imgpts0
+
 class Estimation:
     def __init__(self, mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2, imgpoints, imgpoints2, tate, yoko):
         self.mtx = mtx          # 1カメの内部パラメータ
@@ -34,9 +48,13 @@ class Estimation:
         self.R, _ = cv2.Rodrigues(np.array(self.rvecs))
         self.R2, _ = cv2.Rodrigues(np.array(self.rvecs2))
 
-        self.click1 = 0     # 1カメの画像をクリックしたか
+        self.click_count = 0     # 1カメの画像をクリックしたか
 
         # クラス内の関数間で共有したい変数
+        self.startpoint_i2y = 0
+        self.goalpoint_i2y = 0
+        self.obj2_i2x = 0
+        self.obj2_i2y = 0
         self.img_axes2 = img_axes2  # 軸だけ描画された1カメの画像
         self.slope_i2 = 0           # 1カメの画像をクリックした時の2カメの画像に描画された線の傾き（self.slope_i2 と slope_i2は違う）
         self.img_line = []          # 黄色の線を引いた2カメの画像
@@ -121,18 +139,18 @@ class Estimation:
         if event == cv2.EVENT_LBUTTONDOWN:          # 1カメ画像を左クリックしたら，
             self.slope_i2 = self.Image1to2(x,y)     # 1カメ画像でのクリックされた点が2カメ画像ではどのような線になるのかを求める
             cv2.imshow('Axes2', self.img_line)      # 2カメ画像に黄色の線を描画
-            self.click1 = 1                         #  1カメの画像をクリックしたことを伝える
+            self.click_count = 1                         #  1カメの画像をクリックしたことを伝える
 
     def onMouse2(self, event, x, y, flags, params):     # 2カメの画像に対するクリックイベント
-        if event == cv2.EVENT_LBUTTONDOWN and self.click1 == 1:     # 1カメ画像が既にクリックされていて，2カメ画像をクリックしたら，
+        if event == cv2.EVENT_LBUTTONDOWN and self.click_count >= 1:     # 1カメ画像が既にクリックされていて，2カメ画像をクリックしたら，
             res, img_line2 = self.Image2to1(x,y,self.slope_i2)
             cv2.imshow('Axes2',img_line2)           # 2カメ画像の線上のどの点を選んだかをオレンジの点で描画
             result = [0,0,0]                        # 結果として出力するワールド座標値を定義
-            print(self.SF)
             result[0] = (self.pn[0] * res[0]) / self.SF[0]           # スケールファクタで割る
             result[1] = (self.pn[1] * res[1]) / self.SF[1]
             result[2] = (self.pn[2] * res[2]) / self.SF[2]
             print(f'{result}\n')                    # 最終結果であるワールド座標を出力
+            self.click_count = 2 
             
     def Image1to2(self, x, y):      # 1カメ画像の点から2カメ画像のエピポーラ線を求める関数
         #undist_i1 = cv2.undistortPoints(np.float32([x,y]), self.mtx, self.dist, None, self.newcameramtx)
@@ -156,9 +174,9 @@ class Estimation:
         self.img_line = self.img_axes2.copy()       # img_axes2に上書きしたくないから，複製したものを用意
         slope_i2 = (camera1_i2[0][1] - self.obj_i2[0][1])/(camera1_i2[0][0] - self.obj_i2[0][0])  # 線の傾き
 
-        startpoint_i2y  = slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]           # エピポーラ線の2カメ画像の左端のy座標を求める
-        goalpoint_i2y   = slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]      # エピポーラ線の2カメ画像の右端のy座標を求める
-        self.img_line = cv2.line(self.img_line, (0, int(startpoint_i2y)), (self.img_axes2.shape[1], int(goalpoint_i2y)), (0,255,255), 5)    # エピポーラ線を引く
+        self.startpoint_i2y  = slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]           # エピポーラ線の2カメ画像の左端のy座標を求める
+        self.goalpoint_i2y   = slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]      # エピポーラ線の2カメ画像の右端のy座標を求める
+        self.img_line = cv2.line(self.img_line, (0, int(self.startpoint_i2y)), (self.img_axes2.shape[1], int(self.goalpoint_i2y)), (0,255,255), 5)    # エピポーラ線を引く
         return slope_i2     # この関数内で求まった傾きを返す（self.slope_i2はonMouse()内で更新されるため，self.slope_i2はクリックした時限定の傾き）
 
 
@@ -172,21 +190,21 @@ class Estimation:
             diff1 = abs(option_y - y)   # それぞれの差を求める
             diff2 = abs(option_x - x)
             if diff1 <= diff2:  # 差が小さい方を画像座標として採用する
-                obj2_i2x = x
-                obj2_i2y = option_y
+                self.obj2_i2x = x
+                self.obj2_i2y = option_y
             else:
-                obj2_i2x = option_x
-                obj2_i2y = y
+                self.obj2_i2x = option_x
+                self.obj2_i2y = y
         else:   # 線の傾きが0なら，y座標が求められないから，xとoption_yを画像座標として採用
-            obj2_i2x = x
-            obj2_i2y = option_y
+            self.obj2_i2x = x
+            self.obj2_i2y = option_y
 
-        cv2.circle(img_line2, (int(obj2_i2x),int(obj2_i2y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
+        cv2.circle(img_line2, (int(self.obj2_i2x),int(self.obj2_i2y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
         #undist_i2 = cv2.undistortPoints(np.float32([obj2_i2x,obj2_i2y]), self.mtx2, self.dist2, None, self.newcameramtx2)
         #obj2_i2x = undist_i2[0][0][0]
         #obj2_i2y = undist_i2[0][0][1]
-        obj2_n2x = (obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]       # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る   
-        obj2_n2y = (obj2_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
+        obj2_n2x = (self.obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]       # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る   
+        obj2_n2y = (self.obj2_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
         obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
         obj2_w = (np.array(self.R2.T)) @ (np.array(obj2_n2) - np.array(self.tvecs2))    # obj_n2を世界座標系に変換              Ｗ = Ｒ2^T (Ｃ2 - ｔ)
 
@@ -248,6 +266,14 @@ class Estimation:
         #return np.linalg.norm(q2 - q1), q1, q2
         return ([q3x, q3y, q3z])
 
+    def draw_line(self, img):
+        if self.click_count >= 1:
+            img = cv2.line(img, (0, int(self.startpoint_i2y)), (img.shape[1], int(self.goalpoint_i2y)), (0,255,255), 5)
+            if self.click_count == 2:
+                img = cv2.circle(img, (int(self.obj2_i2x),int(self.obj2_i2y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
+        return img
+
+
 
 def main():
     # 検出するチェッカーボードの交点の数
@@ -267,8 +293,6 @@ def main():
     imgpoints = [] # 2d points in image plane.
     imgpoints2 = [] # 2d points in image plane.
 
-    objpoints0 = []
-    imgpoints0 = []
     img_axes0 = []
     imgpts0 = []
     corners02 = []
@@ -299,15 +323,7 @@ def main():
                     break 
         elif key == ord('a'):
             axes0_count = 1
-            gray0 = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
-            ret0, corners0 = cv2.findChessboardCorners(gray0, (yoko,tate),None)
-            if ret0 == True:
-                objpoints0.append(objp)      # object point
-                corners02 = cv2.cornerSubPix(gray0,corners0,(11,11),(-1,-1),criteria) # 精度を上げている
-                imgpoints0.append(corners02)
-                cv2.waitKey(500)
-                ret0, mtx0, dist0, rvecs0, tvecs0 = cv2.calibrateCamera(objpoints0, imgpoints0, gray0.shape[::-1],None,None)
-                imgpts0, _ = cv2.projectPoints(axis, rvecs0[-1], tvecs0[-1], mtx0, dist0)
+            corners02, imgpts0 = axes_check(frame, tate, yoko, objp, criteria, axis)
         elif key == 27:   #Escで終了
             cv2.destroyAllWindows()
     #メモリを解放して終了するためのコマンド
@@ -358,6 +374,7 @@ def main():
         """
         #print("ret: " + str(ret) + "\nmtx: " + str(mtx) + "\ndist: " + str(dist) + "\nrvecs: " +  str(rvecs[-1]) + "\ntvecs: " + str(tvecs[-1]))
 
+        """
         # 再投影誤差(Re-projection Error)
         # パラメータを評価する
         mean_error = 0
@@ -366,28 +383,45 @@ def main():
             error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2)/len(imgpoints2)
             mean_error += error
         #print( "total error: {}".format(mean_error/len(objpoints)) )    # 0に近ければ近いほど良い
+        """
 
         # project 3D points to image plane
-        imgpts, jac = cv2.projectPoints(axis, rvecs[-1], tvecs[-1], mtx, dist)
+        imgpts, _ = cv2.projectPoints(axis, rvecs[-1], tvecs[-1], mtx, dist)
         img_axes = draw(img_axes,corners12,imgpts)
         # img_axes = cv2.drawFrameAxes(img_axes, mtx, dist, rvecs[-1], tvecs[-1], 3, 3)
-        cv2.imshow('Axes',img_axes)
+        #cv2.imshow('Axes',img_axes)
 
-        imgpts2, jac2 = cv2.projectPoints(axis, rvecs2[-1], tvecs2[-1], mtx2, dist2)
+        imgpts2, _ = cv2.projectPoints(axis, rvecs2[-1], tvecs2[-1], mtx2, dist2)
         img_axes2 = draw(img_axes2,corners22,imgpts2)
         # img_axes = cv2.drawFrameAxes(img_axes, mtx, dist, rvecs[-1], tvecs[-1], 3, 3)
-        cv2.imshow('Axes2',img_axes2)
+        #cv2.imshow('Axes2',img_axes2)
         
         es = Estimation(mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2, imgpoints, imgpoints2, tate, yoko)
-        cv2.setMouseCallback('Axes', es.onMouse)        # 1カメの画像に対するクリックイベント
-        cv2.setMouseCallback('Axes2', es.onMouse2)      # 2カメの画像に対するクリックイベント
+
+        cv2.imshow('camera1',frame)
+        cv2.imshow('camera2',frame2)
+        cv2.setMouseCallback('camera1', es.onMouse)        # 1カメの画像に対するクリックイベント
+        cv2.setMouseCallback('camera2', es.onMouse2)      # 2カメの画像に対するクリックイベント
+
+        while True:
+            cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
+            ret, frame1 = cap1.read()           #カメラからの画像取得
+            cv2.imshow('camera1' , frame1)      #カメラの画像の出力
+            cap1.release()
+
+            cap2 = cv2.VideoCapture(2)
+            ret2, frame2 = cap2.read()
+            img_line = es.draw_line(frame2)
+            cv2.imshow('camera2' , img_line)
+            cap2.release()
 
 
+            #繰り返し分から抜けるためのif文
+            key =cv2.waitKey(1)
+            if key == 27:   #Escで終了
+                cv2.destroyAllWindows()
+                break
 
-    #繰り返し分から抜けるためのif文
-    key =cv2.waitKey(0)
-    if key == 27:   #Escで終了
-        cv2.destroyAllWindows()
 
 
 
