@@ -138,13 +138,13 @@ class Estimation:
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
         if event == cv2.EVENT_LBUTTONDOWN:          # 1カメ画像を左クリックしたら，
             self.slope_i2 = self.Image1to2(x,y)     # 1カメ画像でのクリックされた点が2カメ画像ではどのような線になるのかを求める
-            cv2.imshow('Axes2', self.img_line)      # 2カメ画像に黄色の線を描画
+            #cv2.imshow('Axes2', self.img_line)      # 2カメ画像に黄色の線を描画
             self.click_count = 1                         #  1カメの画像をクリックしたことを伝える
 
     def onMouse2(self, event, x, y, flags, params):     # 2カメの画像に対するクリックイベント
         if event == cv2.EVENT_LBUTTONDOWN and self.click_count >= 1:     # 1カメ画像が既にクリックされていて，2カメ画像をクリックしたら，
             res, img_line2 = self.Image2to1(x,y,self.slope_i2)
-            cv2.imshow('Axes2',img_line2)           # 2カメ画像の線上のどの点を選んだかをオレンジの点で描画
+            #cv2.imshow('Axes2',img_line2)           # 2カメ画像の線上のどの点を選んだかをオレンジの点で描画
             result = [0,0,0]                        # 結果として出力するワールド座標値を定義
             result[0] = (self.pn[0] * res[0]) / self.SF[0]           # スケールファクタで割る
             result[1] = (self.pn[1] * res[1]) / self.SF[1]
@@ -297,54 +297,64 @@ def main():
     imgpts0 = []
     corners02 = []
 
+    img_axes0_2 = []
+    imgpts0_2 = []
+    corners02_2 = []
+
     # 軸の定義
     axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
-    
-    cap = cv2.VideoCapture(0)   #カメラの設定　デバイスIDは0
+
     while True:
-        #カメラからの画像取得
-        _, frame = cap.read()
+        cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
+        _, frame1 = cap1.read()           #カメラからの画像取得
         if axes0_count == 0:
-            cv2.imshow('camera' , frame)
+            cv2.imshow('camera1' , frame1)
         else:
-            img_axes0 = frame.copy()
+            img_axes0 = frame1.copy()
             img_axes0 = draw(img_axes0,corners02,imgpts0)
-            cv2.imshow('camera' , img_axes0)
+            cv2.imshow('camera1' , img_axes0)
+        cap1.release()
+        
+
+        cap2 = cv2.VideoCapture(2)          #カメラの設定　デバイスIDは0
+        _, frame2 = cap2.read()           #カメラからの画像取得
+        if axes0_count == 0:
+            cv2.imshow('camera2' , frame2)
+        else:
+            img_axes0_2 = frame2.copy()
+            img_axes0_2 = draw(img_axes0_2,corners02_2,imgpts0_2)
+            cv2.imshow('camera2' , img_axes0_2)
+        cap2.release()
+        
+        #繰り返し分から抜けるためのif文
         key =cv2.waitKey(1)
         if key == ord('s'):
-            gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
             _, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
             # Find the chess board corners　交点を見つける
             ret, corners = cv2.findChessboardCorners(img_otsu, (yoko,tate),None)
-            if ret == True:
-                pic_count += 1
-                cv2.imwrite(str(pic_count) + '.png',frame)
-                if pic_count == 2:
-                    break 
+
+            gray2 = cv2.cvtColor(frame2,cv2.COLOR_BGR2GRAY)
+            _, img_otsu2 = cv2.threshold(gray2, 0, 255, cv2.THRESH_OTSU)
+            # Find the chess board corners　交点を見つける
+            ret2, corners2 = cv2.findChessboardCorners(img_otsu2, (yoko,tate),None)
+
+            if ret == True and ret2 == True:
+                break
         elif key == ord('a'):
             axes0_count = 1
-            corners02, imgpts0 = axes_check(frame, tate, yoko, objp, criteria, axis)
+            corners02, imgpts0 = axes_check(frame1, tate, yoko, objp, criteria, axis)
+            corners02_2, imgpts0_2 = axes_check(frame2, tate, yoko, objp, criteria, axis)
         elif key == 27:   #Escで終了
-            cv2.destroyAllWindows()
-    #メモリを解放して終了するためのコマンド
-    cap.release()
-    cv2.destroyAllWindows()
+            break
     
+    #cv2.imwrite('1.png',frame1)
+    #cv2.imwrite('2.png',frame2)
 
-    frame = cv2.imread('1.png')  #queryimage # left image
-    frame2 = cv2.imread('2.png')  #queryimage # left image
-
-    img = frame.copy()
-    img_axes = frame.copy()
-
-    img2 = frame2.copy()
-    img_axes2 = frame2.copy()
-
-
-    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
     ret, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
 
-    gray2 = cv2.cvtColor(img2,cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(frame2,cv2.COLOR_BGR2GRAY)
     ret2, img_otsu2 = cv2.threshold(gray2, 0, 255, cv2.THRESH_OTSU)
 
     # Find the chess board corners　交点を見つける
@@ -387,34 +397,26 @@ def main():
 
         # project 3D points to image plane
         imgpts, _ = cv2.projectPoints(axis, rvecs[-1], tvecs[-1], mtx, dist)
-        img_axes = draw(img_axes,corners12,imgpts)
-        # img_axes = cv2.drawFrameAxes(img_axes, mtx, dist, rvecs[-1], tvecs[-1], 3, 3)
-        #cv2.imshow('Axes',img_axes)
-
         imgpts2, _ = cv2.projectPoints(axis, rvecs2[-1], tvecs2[-1], mtx2, dist2)
-        img_axes2 = draw(img_axes2,corners22,imgpts2)
-        # img_axes = cv2.drawFrameAxes(img_axes, mtx, dist, rvecs[-1], tvecs[-1], 3, 3)
-        #cv2.imshow('Axes2',img_axes2)
         
-        es = Estimation(mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2, imgpoints, imgpoints2, tate, yoko)
+        es = Estimation(mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, frame2, imgpoints, imgpoints2, tate, yoko)
 
-        cv2.imshow('camera1',frame)
-        cv2.imshow('camera2',frame2)
         cv2.setMouseCallback('camera1', es.onMouse)        # 1カメの画像に対するクリックイベント
         cv2.setMouseCallback('camera2', es.onMouse2)      # 2カメの画像に対するクリックイベント
 
         while True:
             cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
             ret, frame1 = cap1.read()           #カメラからの画像取得
-            cv2.imshow('camera1' , frame1)      #カメラの画像の出力
+            img_axes = draw(frame1,corners12,imgpts)
+            cv2.imshow('camera1', img_axes)      #カメラの画像の出力
             cap1.release()
 
             cap2 = cv2.VideoCapture(2)
             ret2, frame2 = cap2.read()
-            img_line = es.draw_line(frame2)
-            cv2.imshow('camera2' , img_line)
+            img_axes2 = draw(frame2,corners22,imgpts2)
+            img_axes2 = es.draw_line(img_axes2)
+            cv2.imshow('camera2', img_axes2)
             cap2.release()
-
 
             #繰り返し分から抜けるためのif文
             key =cv2.waitKey(1)
