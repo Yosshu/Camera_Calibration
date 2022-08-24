@@ -153,11 +153,11 @@ class Estimation:
             self.click_count = 2 
             
     def Image1to2(self, x, y):      # 1カメ画像の点から2カメ画像のエピポーラ線を求める関数
-        #undist_i1 = cv2.undistortPoints(np.float32([x,y]), self.mtx, self.dist, None, self.newcameramtx)
-        #obj_i1x = undist_i1[0][0][0]                                            # 対象物の1カメ画像座標　クリックした点
-        #obj_i1y = undist_i1[0][0][1]
-        obj_i1x = x                                            # 対象物の1カメ画像座標　クリックした点
-        obj_i1y = y
+        undist_i1 = cv2.undistortPoints(np.float32([x,y]), self.mtx, self.dist, None, self.mtx)
+        obj_i1x = undist_i1[0][0][0]                                            # 対象物の1カメ画像座標　クリックした点
+        obj_i1y = undist_i1[0][0][1]
+        #obj_i1x = x                                            # 対象物の1カメ画像座標　クリックした点
+        #obj_i1y = y
         obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
         obj_n1y = (obj_i1y - self.mtx[1][2]) / self.mtx[1][1]
         obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
@@ -200,11 +200,11 @@ class Estimation:
             self.obj2_i2y = option_y
 
         cv2.circle(img_line2, (int(self.obj2_i2x),int(self.obj2_i2y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
-        #undist_i2 = cv2.undistortPoints(np.float32([obj2_i2x,obj2_i2y]), self.mtx2, self.dist2, None, self.newcameramtx2)
-        #obj2_i2x = undist_i2[0][0][0]
-        #obj2_i2y = undist_i2[0][0][1]
-        obj2_n2x = (self.obj2_i2x - self.mtx2[0][2]) / self.mtx2[0][0]       # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る   
-        obj2_n2y = (self.obj2_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
+        undist_i2 = cv2.undistortPoints(np.float32([self.obj2_i2x,self.obj2_i2y]), self.mtx2, self.dist2, None, self.mtx2)
+        obj2_i2x_undist = undist_i2[0][0][0]
+        obj2_i2y_undist = undist_i2[0][0][1]
+        obj2_n2x = (obj2_i2x_undist - self.mtx2[0][2]) / self.mtx2[0][0]       # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る   
+        obj2_n2y = (obj2_i2y_undist - self.mtx2[1][2]) / self.mtx2[1][1]
         obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
         obj2_w = (np.array(self.R2.T)) @ (np.array(obj2_n2) - np.array(self.tvecs2))    # obj_n2を世界座標系に変換              Ｗ = Ｒ2^T (Ｃ2 - ｔ)
 
@@ -303,7 +303,7 @@ def main():
 
     # 軸の定義
     axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
-
+    
     while True:
         cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
         _, frame1 = cap1.read()           #カメラからの画像取得
@@ -351,6 +351,13 @@ def main():
     #cv2.imwrite('1.png',frame1)
     #cv2.imwrite('2.png',frame2)
 
+    """
+    frame1 = cv2.imread("1.png")
+    frame2 = cv2.imread("2.png")
+    cv2.imshow('camera1',frame1)
+    cv2.imshow('camera2',frame2)
+    """  
+    
     gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
     ret, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
 
@@ -403,7 +410,7 @@ def main():
 
         cv2.setMouseCallback('camera1', es.onMouse)        # 1カメの画像に対するクリックイベント
         cv2.setMouseCallback('camera2', es.onMouse2)      # 2カメの画像に対するクリックイベント
-
+        
         while True:
             cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
             ret, frame1 = cap1.read()           #カメラからの画像取得
@@ -423,8 +430,23 @@ def main():
             if key == 27:   #Escで終了
                 cv2.destroyAllWindows()
                 break
+        
 
+        """
+        while True:
+            img_axes = draw(frame1,corners12,imgpts)
+            cv2.imshow('camera1', img_axes)      #カメラの画像の出力
 
+            frame22 = frame2.copy()
+            img_axes2 = draw(frame22,corners22,imgpts2)
+            img_axes2 = es.draw_line(img_axes2)
+            cv2.imshow('camera2', img_axes2)
+            #繰り返し分から抜けるためのif文
+            key =cv2.waitKey(1)
+            if key == 27:   #Escで終了
+                cv2.destroyAllWindows()
+                break
+        """
 
 
 if __name__ == "__main__":
