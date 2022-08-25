@@ -52,7 +52,7 @@ class Estimation:
 
         # クラス内の関数間で共有したい変数
         self.startpoint_i2y = 0
-        self.goalpoint_i2y = 0
+        self.endpoint_i2y = 0
         self.obj2_i2x = 0
         self.obj2_i2y = 0
         self.img_axes2 = img_axes2  # 軸だけ描画された1カメの画像
@@ -68,35 +68,28 @@ class Estimation:
 
 
     def ScaleFactor(self):       # スケールファクタを求める関数
-        stdside = 3         # 原点を含む正方形の点群を基準点として使う，stdsideはその正方形の一辺の個数，stdside=1はnp.mean()でエラー出るからダメ，stdside>=2
-        stdpoints = []      # 1カメの画像の基準点の保管
-        stdpoints2 = []     # 2カメの画像の基準点の保管
+        stdnum = 3         # 基準点の個数，stdside=1,2はnp.mean()でエラー出るからダメ，stdside>=3
         imgpoints_ravel = np.ravel(self.imgpoints)   # 1行に並べる，点の選択後に直す
         imgpoints2_ravel = np.ravel(self.imgpoints2)
-        for i in range(stdside*stdside*2):      # cv2.findChessboardCornersで見つけた原点と原点付近の点の画像座標を配列に保管
-                k = int(i/(stdside*2))*2*self.yoko + (i%(stdside*2))   # stdside個目の点(x,yで2要素ずつ)まで行ったら次の行
-                stdpoints = np.append(stdpoints, imgpoints_ravel[k])
-                stdpoints2 = np.append(stdpoints2, imgpoints2_ravel[k])
-        stdpoints = stdpoints.reshape([stdside*stdside, 2])  # (x,y)をstdsideの2乗個の形に直す
-        stdpoints2 = stdpoints2.reshape([stdside*stdside, 2])
-        """
-        # 確認用
-        for i in stdpoints:
-            cv2.circle(img, (int(i[0]),int(i[1])), 8, (255, 0, 255), thickness=-1)
-            cv2.imshow('stdpoints', img)
-        """
-        std_w = []          # 全ての基準点のワールド座標を格納する配列
-        for i in range(stdside*stdside):
-            stdslope = self.Image1to2(stdpoints[i][0], stdpoints[i][1])
-            stdres, _ = self.Image2to1(stdpoints2[i][0], stdpoints2[i][1], stdslope)
-            std_w.append(stdres)
 
         # X軸方向
+        stdpoints_x = imgpoints_ravel[0:stdnum*2]
+        stdpoints2_x = imgpoints2_ravel[0:stdnum*2]
+        stdpoints_x = stdpoints_x.reshape([stdnum, 2])  # (x,y)をstdsideの2乗個の形に直す
+        stdpoints2_x = stdpoints2_x.reshape([stdnum, 2])
+
+        std_w_x = []
+        for i in range(stdnum):
+            camera1_w, obj1_w = self.line_SEpoint(stdpoints_x[i][0], stdpoints_x[i][1], 1)
+            camera2_w, obj2_w = self.line_SEpoint(stdpoints2_x[i][0], stdpoints2_x[i][1], 2)
+            line1x = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
+            line2x = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
+            res_x = self.distance_2lines(line1x, line2x)
+            std_w_x.append(res_x)
+
         std_diffx = []
-        for i in range(stdside):
-            for j in range(stdside-1):
-                k = i*stdside + j
-                std_diffx.append(std_w[k+1][0] - std_w[k][0])
+        for i in range(stdnum-1):
+            std_diffx.append(std_w_x[i+1][0] - std_w_x[i][0])
         SFx = np.mean(std_diffx)    # 差の平均
         if SFx > 0:
             self.pn[0] = 1
@@ -104,11 +97,28 @@ class Estimation:
             self.pn[0] = -1
 
         # Y軸方向
+        stdpoints_y = []
+        stdpoints2_y = []
+        for i in range(stdnum):
+            stdpoints_y = np.append(stdpoints_y, imgpoints_ravel[i*stdnum*2])
+            stdpoints_y = np.append(stdpoints_y, imgpoints_ravel[i*stdnum*2+1])
+            stdpoints2_y = np.append(stdpoints2_y, imgpoints2_ravel[i*stdnum*2])
+            stdpoints2_y = np.append(stdpoints2_y, imgpoints2_ravel[i*stdnum*2+1])
+        stdpoints_y = stdpoints_y.reshape([stdnum, 2])  # (x,y)をstdsideの2乗個の形に直す
+        stdpoints2_y = stdpoints2_y.reshape([stdnum, 2])
+
+        std_w_y = []
+        for i in range(stdnum):
+            camera1_w, obj1_w = self.line_SEpoint(stdpoints_y[i][0], stdpoints_y[i][1], 1)
+            camera2_w, obj2_w = self.line_SEpoint(stdpoints2_y[i][0], stdpoints2_y[i][1], 2)
+            line1y = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
+            line2y = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
+            res_y = self.distance_2lines(line1y, line2y)
+            std_w_y.append(res_y)
+
         std_diffy = []
-        for i in range(stdside-1):     
-            for j in range(stdside):
-                k = i * stdside + j
-                std_diffy.append(std_w[k+stdside][1] - std_w[k][1])
+        for i in range(stdnum-1):     
+            std_diffy.append(std_w_y[i+1][1] - std_w_y[i][1])
         SFy = np.mean(std_diffy)    # 差の平均
         if SFy > 0:
             self.pn[1] = 1
@@ -117,14 +127,14 @@ class Estimation:
 
         # Z軸方向
         stdz_w = []                 
-        for i in range(stdside):
+        for i in range(stdnum):
             stdpointsz, _ = cv2.projectPoints(np.float32([0,0,-i]), self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
             stdpoints2z, _ = cv2.projectPoints(np.float32([0,0,-i]), self.rvecs2[-1], self.tvecs2[-1], self.mtx2, self.dist2)
             stdslopez = self.Image1to2(stdpointsz[0][0][0], stdpointsz[0][0][1])
             stdresz, _ = self.Image2to1(stdpoints2z[0][0][0], stdpoints2z[0][0][1], stdslopez)
             stdz_w.append(stdresz[2])
         std_diffz = []
-        for i in range(stdside-1):
+        for i in range(stdnum-1):
             std_diffz.append(stdz_w[i+1]-stdz_w[i])
         SFz = np.mean(std_diffz)
         if SFz > 0:
@@ -175,8 +185,8 @@ class Estimation:
         slope_i2 = (camera1_i2[0][1] - self.obj_i2[0][1])/(camera1_i2[0][0] - self.obj_i2[0][0])  # 線の傾き
 
         self.startpoint_i2y  = slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]           # エピポーラ線の2カメ画像の左端のy座標を求める
-        self.goalpoint_i2y   = slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]      # エピポーラ線の2カメ画像の右端のy座標を求める
-        self.img_line = cv2.line(self.img_line, (0, int(self.startpoint_i2y)), (self.img_axes2.shape[1], int(self.goalpoint_i2y)), (0,255,255), 5)    # エピポーラ線を引く
+        self.endpoint_i2y   = slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]      # エピポーラ線の2カメ画像の右端のy座標を求める
+        self.img_line = cv2.line(self.img_line, (0, int(self.startpoint_i2y)), (self.img_axes2.shape[1], int(self.endpoint_i2y)), (0,255,255), 5)    # エピポーラ線を引く
         return slope_i2     # この関数内で求まった傾きを返す（self.slope_i2はonMouse()内で更新されるため，self.slope_i2はクリックした時限定の傾き）
 
 
@@ -268,11 +278,45 @@ class Estimation:
 
     def draw_line(self, img):
         if self.click_count >= 1:
-            img = cv2.line(img, (0, int(self.startpoint_i2y)), (img.shape[1], int(self.goalpoint_i2y)), (0,255,255), 5)
+            img = cv2.line(img, (0, int(self.startpoint_i2y)), (img.shape[1], int(self.endpoint_i2y)), (0,255,255), 5)
             if self.click_count == 2:
                 img = cv2.circle(img, (int(self.obj2_i2x),int(self.obj2_i2y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
         return img
 
+    def line_SEpoint(self, x, y, num):      # 始点（カメラ）と終点（正規化画像座標）のワールド座標を求める関数，numは1カメか2カメか
+        if num == 1:
+            undist_i1 = cv2.undistortPoints(np.float32([x,y]), self.mtx, self.dist, None, self.mtx)
+            obj_i1x = undist_i1[0][0][0]                                            # 対象物の1カメ画像座標
+            obj_i1y = undist_i1[0][0][1]
+
+            obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
+            obj_n1y = (obj_i1y - self.mtx[1][2]) / self.mtx[1][1]
+            obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
+            #self.obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
+            obj1_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                    # obj_n1を世界座標系に変換              Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+            
+            #self.camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+            camera1_w = (self.R.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))       # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+
+            return camera1_w, obj1_w      # この関数内で求まった傾きを返す（self.slope_i2はonMouse()内で更新されるため，self.slope_i2はクリックした時限定の傾き）
+
+        elif num == 2:
+            undist_i2 = cv2.undistortPoints(np.float32([x,y]), self.mtx2, self.dist2, None, self.mtx2)
+            obj_i2x = undist_i2[0][0][0]                                            # 対象物の2カメ画像座標
+            obj_i2y = undist_i2[0][0][1]
+
+            obj_n2x = (obj_i2x - self.mtx2[0][2]) / self.mtx2[0][0]                   # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
+            obj_n2y = (obj_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
+            obj_n2 = [[obj_n2x], [obj_n2y], [1]]                                    # 対象物の2カメ正規化画像座標系を2カメカメラ座標系に変換
+            #self.obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
+            obj2_w = (self.R2.T) @ (np.array(obj_n2) - np.array(self.tvecs2))                    # obj_n2を世界座標系に変換              Ｗ = Ｒ2^T (Ｃ2 - ｔ2)
+            
+            #self.camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 2カメのワールド座標        Ｗ = Ｒ2^T (Ｃ2 - ｔ2)
+            camera2_w = (self.R2.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs2))       # 2カメのワールド座標        Ｗ = Ｒ2^T (Ｃ2 - ｔ2)
+
+            return camera2_w, obj2_w
+
+        return None, None
 
 
 def main():
