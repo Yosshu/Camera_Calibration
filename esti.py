@@ -24,9 +24,10 @@ def axes_check(img, tate, yoko, objp, criteria, axis):
         corners02 = cv2.cornerSubPix(gray0,corners0,(11,11),(-1,-1),criteria) # 精度を上げている
         imgpoints0.append(corners02)
         cv2.waitKey(500)
-        ret0, mtx0, dist0, rvecs0, tvecs0 = cv2.calibrateCamera(objpoints0, imgpoints0, gray0.shape[::-1],None,None)
+        ret, mtx0, dist0, rvecs0, tvecs0 = cv2.calibrateCamera(objpoints0, imgpoints0, gray0.shape[::-1],None,None)
         imgpts0, _ = cv2.projectPoints(axis, rvecs0[-1], tvecs0[-1], mtx0, dist0)
-        return corners02, imgpts0
+        return ret0, corners02, imgpts0
+    return ret0, None, None
 
 class Estimation:
     def __init__(self, mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2, imgpoints, imgpoints2, tate, yoko):
@@ -85,11 +86,11 @@ class Estimation:
             line1x = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
             line2x = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
             res_x = self.distance_2lines(line1x, line2x)
-            std_w_x.append(res_x)
+            std_w_x.append(res_x[0])
 
         std_diffx = []
         for i in range(stdnum-1):
-            std_diffx.append(std_w_x[i+1][0] - std_w_x[i][0])
+            std_diffx.append(std_w_x[i+1] - std_w_x[i])
         SFx = np.mean(std_diffx)    # 差の平均
         if SFx > 0:
             self.pn[0] = 1
@@ -100,12 +101,13 @@ class Estimation:
         stdpoints_y = []
         stdpoints2_y = []
         for i in range(stdnum):
-            stdpoints_y = np.append(stdpoints_y, imgpoints_ravel[i*stdnum*2])
-            stdpoints_y = np.append(stdpoints_y, imgpoints_ravel[i*stdnum*2+1])
-            stdpoints2_y = np.append(stdpoints2_y, imgpoints2_ravel[i*stdnum*2])
-            stdpoints2_y = np.append(stdpoints2_y, imgpoints2_ravel[i*stdnum*2+1])
+            stdpoints_y = np.append(stdpoints_y, imgpoints_ravel[i*self.yoko*2])
+            stdpoints_y = np.append(stdpoints_y, imgpoints_ravel[i*self.yoko*2+1])
+            stdpoints2_y = np.append(stdpoints2_y, imgpoints2_ravel[i*self.yoko*2])
+            stdpoints2_y = np.append(stdpoints2_y, imgpoints2_ravel[i*self.yoko*2+1])
         stdpoints_y = stdpoints_y.reshape([stdnum, 2])  # (x,y)をstdsideの2乗個の形に直す
         stdpoints2_y = stdpoints2_y.reshape([stdnum, 2])
+        
 
         std_w_y = []
         for i in range(stdnum):
@@ -114,11 +116,11 @@ class Estimation:
             line1y = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
             line2y = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
             res_y = self.distance_2lines(line1y, line2y)
-            std_w_y.append(res_y)
+            std_w_y.append(res_y[1])
 
         std_diffy = []
         for i in range(stdnum-1):     
-            std_diffy.append(std_w_y[i+1][1] - std_w_y[i][1])
+            std_diffy.append(std_w_y[i+1] - std_w_y[i])
         SFy = np.mean(std_diffy)    # 差の平均
         if SFy > 0:
             self.pn[1] = 1
@@ -126,16 +128,21 @@ class Estimation:
             self.pn[1] = -1
 
         # Z軸方向
-        stdz_w = []                 
+        std_w_z = []           
         for i in range(stdnum):
-            stdpointsz, _ = cv2.projectPoints(np.float32([0,0,-i]), self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
-            stdpoints2z, _ = cv2.projectPoints(np.float32([0,0,-i]), self.rvecs2[-1], self.tvecs2[-1], self.mtx2, self.dist2)
-            stdslopez = self.Image1to2(stdpointsz[0][0][0], stdpointsz[0][0][1])
-            stdresz, _ = self.Image2to1(stdpoints2z[0][0][0], stdpoints2z[0][0][1], stdslopez)
-            stdz_w.append(stdresz[2])
+            stdpointsz, _ = cv2.projectPoints(np.float32([0,0,-i]), self.rvecs[-1], self.tvecs[-1], self.mtx, None)
+            stdpoints2z, _ = cv2.projectPoints(np.float32([0,0,-i]), self.rvecs2[-1], self.tvecs2[-1], self.mtx2, None)
+            camera1_w, obj1_w = self.line_SEpoint(stdpointsz[0][0][0], stdpointsz[0][0][1], 1)
+            camera2_w, obj2_w = self.line_SEpoint(stdpoints2z[0][0][0], stdpoints2z[0][0][1], 2)
+            cv2.circle(self.img_axes2, (int(stdpoints2z[0][0][0]),int(stdpoints2z[0][0][1])), 8, (0, 165, 255), thickness=-1)
+            line1z = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
+            line2z = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
+            res_z = self.distance_2lines(line1z, line2z)
+            std_w_z.append(res_z[2])
+        cv2.imshow("self.img_axes2", self.img_axes2)
         std_diffz = []
         for i in range(stdnum-1):
-            std_diffz.append(stdz_w[i+1]-stdz_w[i])
+            std_diffz.append(std_w_z[i+1]-std_w_z[i])
         SFz = np.mean(std_diffz)
         if SFz > 0:
             self.pn[2] = 1
@@ -160,7 +167,7 @@ class Estimation:
             result[1] = (self.pn[1] * res[1]) / self.SF[1]
             result[2] = (self.pn[2] * res[2]) / self.SF[2]
             print(f'{result}\n')                    # 最終結果であるワールド座標を出力
-            self.click_count = 2 
+            self.click_count = 2
             
     def Image1to2(self, x, y):      # 1カメ画像の点から2カメ画像のエピポーラ線を求める関数
         undist_i1 = cv2.undistortPoints(np.float32([x,y]), self.mtx, self.dist, None, self.mtx)
@@ -323,8 +330,6 @@ def main():
     # 検出するチェッカーボードの交点の数
     tate = 7
     yoko = 10
-    pic_count = 0       # 何枚写真を撮ったか
-    axes0_count = 0
     # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -345,29 +350,34 @@ def main():
     imgpts0_2 = []
     corners02_2 = []
 
+    ret01 = False
+    ret02 = False
+
     # 軸の定義
     axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
     
     while True:
         cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
         _, frame1 = cap1.read()           #カメラからの画像取得
-        if axes0_count == 0:
-            cv2.imshow('camera1' , frame1)
-        else:
+
+        if ret01 == True:
             img_axes0 = frame1.copy()
             img_axes0 = draw(img_axes0,corners02,imgpts0)
             cv2.imshow('camera1' , img_axes0)
+        else:
+            cv2.imshow('camera1' , frame1)
         cap1.release()
         
 
         cap2 = cv2.VideoCapture(2)          #カメラの設定　デバイスIDは0
         _, frame2 = cap2.read()           #カメラからの画像取得
-        if axes0_count == 0:
-            cv2.imshow('camera2' , frame2)
-        else:
+        if ret02 == True:
             img_axes0_2 = frame2.copy()
             img_axes0_2 = draw(img_axes0_2,corners02_2,imgpts0_2)
             cv2.imshow('camera2' , img_axes0_2)
+        else:
+            cv2.imshow('camera2' , frame2)
+
         cap2.release()
         
         #繰り返し分から抜けるためのif文
@@ -386,9 +396,8 @@ def main():
             if ret == True and ret2 == True:
                 break
         elif key == ord('a'):
-            axes0_count = 1
-            corners02, imgpts0 = axes_check(frame1, tate, yoko, objp, criteria, axis)
-            corners02_2, imgpts0_2 = axes_check(frame2, tate, yoko, objp, criteria, axis)
+            ret01, corners02, imgpts0 = axes_check(frame1, tate, yoko, objp, criteria, axis)
+            ret02, corners02_2, imgpts0_2 = axes_check(frame2, tate, yoko, objp, criteria, axis)
         elif key == 27:   #Escで終了
             break
     
@@ -434,18 +443,7 @@ def main():
         tvecs：translation vectors，並進ベクトル
         """
         #print("ret: " + str(ret) + "\nmtx: " + str(mtx) + "\ndist: " + str(dist) + "\nrvecs: " +  str(rvecs[-1]) + "\ntvecs: " + str(tvecs[-1]))
-
-        """
-        # 再投影誤差(Re-projection Error)
-        # パラメータを評価する
-        mean_error = 0
-        for i in range(len(objpoints)):
-            imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], mtx, dist)
-            error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2)/len(imgpoints2)
-            mean_error += error
-        #print( "total error: {}".format(mean_error/len(objpoints)) )    # 0に近ければ近いほど良い
-        """
-
+        
         # project 3D points to image plane
         imgpts, _ = cv2.projectPoints(axis, rvecs[-1], tvecs[-1], mtx, dist)
         imgpts2, _ = cv2.projectPoints(axis, rvecs2[-1], tvecs2[-1], mtx2, dist2)
