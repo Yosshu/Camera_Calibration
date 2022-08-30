@@ -57,10 +57,7 @@ class Estimation:
         self.obj2_i2x = 0
         self.obj2_i2y = 0
         self.img_axes2 = img_axes2  # 軸だけ描画された1カメの画像
-        self.slope_i2 = 0           # 1カメの画像をクリックした時の2カメの画像に描画された線の傾き（self.slope_i2 と slope_i2は違う）
         self.img_line = []          # 黄色の線を引いた2カメの画像
-        self.obj_w = []             # 1カメの画像座標（1カメの画像をクリックした点）→1カメの正規化画像座標→ワールド座標（self.obj_w）
-        self.obj_i2 = []            # 1カメの画像座標（1カメの画像をクリックした点）→1カメの正規化画像座標→ワールド座標→2カメの正規化画像座標→2カメの画像座標（self.obj_i2）
         self.SF = []                # スケールファクタ [X軸座標, Y軸座標, Z軸座標]
         self.pn = [1, 1, 1]         # 1 or -1，ワールド座標がプラスかマイナスか，出力する直前にかける [X軸座標, Y軸座標, Z軸座標]
 
@@ -138,12 +135,12 @@ class Estimation:
             stdpoints2z, _ = cv2.projectPoints(np.float32([0,0,-i]), self.rvecs2[-1], self.tvecs2[-1], self.mtx2, None)
             camera1_w, obj1_w = self.line_SEpoint(stdpointsz[0][0][0], stdpointsz[0][0][1], 1)
             camera2_w, obj2_w = self.line_SEpoint(stdpoints2z[0][0][0], stdpoints2z[0][0][1], 2)
-            cv2.circle(self.img_axes2, (int(stdpoints2z[0][0][0]),int(stdpoints2z[0][0][1])), 8, (0, 165, 255), thickness=-1)
+            #cv2.circle(self.img_axes2, (int(stdpoints2z[0][0][0]),int(stdpoints2z[0][0][1])), 8, (0, 165, 255), thickness=-1)
             line1z = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
             line2z = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
             res_z = self.distance_2lines(line1z, line2z)
             std_w_z.append(res_z[2])
-        cv2.imshow("self.img_axes2", self.img_axes2)
+        #cv2.imshow("self.img_axes2", self.img_axes2)
         std_diffz = []
         for i in range(stdnum-1):
             std_diffz.append(std_w_z[i+1]-std_w_z[i])
@@ -178,6 +175,10 @@ class Estimation:
             result[0] = (self.pn[0] * res[0]) / self.SF[0]           # スケールファクタで割る
             result[1] = (self.pn[1] * res[1]) / self.SF[1]
             result[2] = (self.pn[2] * res[2]) / self.SF[2]
+            
+            result[0] = round(result[0], 4)
+            result[1] = round(result[1], 4)
+            result[2] = round(result[2], 4)
             print(f'{result}\n')                    # 最終結果であるワールド座標を出力
             self.click_count = 2
             
@@ -190,13 +191,13 @@ class Estimation:
             obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
             obj_n1y = (obj_i1y - self.mtx[1][2]) / self.mtx[1][1]
             obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
-            #self.obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
+            #obj1_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
             obj1_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                    # obj_n1を世界座標系に変換              Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
             
             #self.camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
             camera1_w = (self.R.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))       # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
 
-            return camera1_w, obj1_w      # この関数内で求まった傾きを返す（self.slope_i2はonMouse()内で更新されるため，self.slope_i2はクリックした時限定の傾き）
+            return camera1_w, obj1_w
 
         elif num == 2:
             undist_i2 = cv2.undistortPoints(np.float32([x,y]), self.mtx2, self.dist2, None, self.mtx2)
@@ -206,10 +207,10 @@ class Estimation:
             obj_n2x = (obj_i2x - self.mtx2[0][2]) / self.mtx2[0][0]                   # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
             obj_n2y = (obj_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
             obj_n2 = [[obj_n2x], [obj_n2y], [1]]                                    # 対象物の2カメ正規化画像座標系を2カメカメラ座標系に変換
-            #self.obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
+            #obj1_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
             obj2_w = (self.R2.T) @ (np.array(obj_n2) - np.array(self.tvecs2))                    # obj_n2を世界座標系に変換              Ｗ = Ｒ2^T (Ｃ2 - ｔ2)
             
-            #self.camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 2カメのワールド座標        Ｗ = Ｒ2^T (Ｃ2 - ｔ2)
+            #camera2_w = (np.linalg.inv(R2)) @ (np.array([[0], [0], [0]]) - np.array(tvecs2))     # 2カメのワールド座標        Ｗ = Ｒ2^T (Ｃ2 - ｔ2)
             camera2_w = (self.R2.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs2))       # 2カメのワールド座標        Ｗ = Ｒ2^T (Ｃ2 - ｔ2)
 
             return camera2_w, obj2_w
@@ -246,69 +247,6 @@ class Estimation:
 
         return None, None
 
-    """
-    def Image1to2(self, x, y):      # 1カメ画像の点から2カメ画像のエピポーラ線を求める関数
-        undist_i1 = cv2.undistortPoints(np.float32([x,y]), self.mtx, self.dist, None, self.mtx)
-        obj_i1x = undist_i1[0][0][0]                                            # 対象物の1カメ画像座標　クリックした点
-        obj_i1y = undist_i1[0][0][1]
-        #obj_i1x = x                                            # 対象物の1カメ画像座標　クリックした点
-        #obj_i1y = y
-        obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
-        obj_n1y = (obj_i1y - self.mtx[1][2]) / self.mtx[1][1]
-        obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
-        #self.obj_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
-        self.obj_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                    # obj_n1を世界座標系に変換              Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
-        obj_c2 = np.array(self.R2) @ np.array(self.obj_w) + np.array(self.tvecs2)              # obj_wを2カメのカメラ座標系に変換     Ｃ2 = Ｒ2Ｗ + ｔ2
-        self.obj_i2 = self.mtx2 @ (obj_c2/obj_c2[0][2])                                   # obj_c2を2カメの画像座標に変換
-        
-        #self.camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
-        self.camera1_w = (self.R.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))       # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
-        camera1_c2 = np.array(self.R2) @ self.camera1_w + np.array(self.tvecs2)                 # 2カメのカメラ座標系での1カメの位置
-        camera1_i2 = self.mtx2 @ (camera1_c2/camera1_c2[0][2])                       # 2カメの画像座標系での1カメの位置
-
-        self.img_line = self.img_axes2.copy()       # img_axes2に上書きしたくないから，複製したものを用意
-        slope_i2 = (camera1_i2[0][1] - self.obj_i2[0][1])/(camera1_i2[0][0] - self.obj_i2[0][0])  # 線の傾き
-
-        self.startpoint_i2y  = slope_i2*(0                    - self.obj_i2[0][0]) + self.obj_i2[0][1]           # エピポーラ線の2カメ画像の左端のy座標を求める
-        self.endpoint_i2y   = slope_i2*(self.img_axes2.shape[1]   - self.obj_i2[0][0]) + self.obj_i2[0][1]      # エピポーラ線の2カメ画像の右端のy座標を求める
-        self.img_line = cv2.line(self.img_line, (0, int(self.startpoint_i2y)), (self.img_axes2.shape[1], int(self.endpoint_i2y)), (0,255,255), 5)    # エピポーラ線を引く
-        return slope_i2     # この関数内で求まった傾きを返す（self.slope_i2はonMouse()内で更新されるため，self.slope_i2はクリックした時限定の傾き）
-
-    def Image2to1(self, x, y, slope_i2):    # 2カメ画像のエピポーラ線上の1点を指定することでその場所のワールド座標を求める関数（まだ1マスが1にはなってない）
-        img_line2 = self.img_line.copy()
-        option_y = slope_i2*(x - self.obj_i2[0][0][0]) + self.obj_i2[0][1][0]    # クリックされたx座標から線のy座標を求める
-        option_y = option_y[0]  # 何故か配列になっているため[]をはずす
-        if slope_i2 != 0:  # 線の傾きが0でないなら，
-            option_x = (y - self.obj_i2[0][1][0])/slope_i2 + self.obj_i2[0][0][0]    # クリックされたy座標から線のx座標を求める
-            option_x = option_x[0]  # 同じく何故か配列になっているため[]をはずす
-            diff1 = abs(option_y - y)   # それぞれの差を求める
-            diff2 = abs(option_x - x)
-            if diff1 <= diff2:  # 差が小さい方を画像座標として採用する
-                self.obj2_i2x = x
-                self.obj2_i2y = option_y
-            else:
-                self.obj2_i2x = option_x
-                self.obj2_i2y = y
-        else:   # 線の傾きが0なら，y座標が求められないから，xとoption_yを画像座標として採用
-            self.obj2_i2x = x
-            self.obj2_i2y = option_y
-
-        cv2.circle(img_line2, (int(self.obj2_i2x),int(self.obj2_i2y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
-        undist_i2 = cv2.undistortPoints(np.float32([self.obj2_i2x,self.obj2_i2y]), self.mtx2, self.dist2, None, self.mtx2)
-        obj2_i2x_undist = undist_i2[0][0][0]
-        obj2_i2y_undist = undist_i2[0][0][1]
-        obj2_n2x = (obj2_i2x_undist - self.mtx2[0][2]) / self.mtx2[0][0]       # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る   
-        obj2_n2y = (obj2_i2y_undist - self.mtx2[1][2]) / self.mtx2[1][1]
-        obj2_n2 = [[obj2_n2x], [obj2_n2y], [1]]
-        obj2_w = (np.array(self.R2.T)) @ (np.array(obj2_n2) - np.array(self.tvecs2))    # obj_n2を世界座標系に変換              Ｗ = Ｒ2^T (Ｃ2 - ｔ)
-
-        camera2_w = (self.R2.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs2))       # 2カメのワールド座標        Ｗ = Ｒ2^T (Ｃ2 - ｔ)
-
-        line1 = np.hstack((self.camera1_w[0].T, self.obj_w[0].T)).reshape(2, 3)
-        line2 = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
-        res = self.distance_2lines(line1,line2)
-        return res, img_line2
-    """
 
     def distance_2lines(self, line1, line2):    # 直線同士の最接近距離と最接近点を求める関数
         '''
@@ -364,21 +302,20 @@ class Estimation:
         if num == 2:
             if self.click_count >= 1:
                 startpoint_i2y, endpoint_i2y = self.epipo(self.camera1_w, self.obj1_w, 1)
-                img = cv2.line(img, (0, int(startpoint_i2y)), (img.shape[1], int(endpoint_i2y)), (0,255,255), 5)
+                img = cv2.line(img, (0, int(startpoint_i2y)), (img.shape[1], int(endpoint_i2y)), (0,255,255), 3)
                 if self.click_count == 2:
-                    img = cv2.circle(img, (int(self.obj2_i2x),int(self.obj2_i2y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
+                    img = cv2.circle(img, (int(self.obj2_i2x),int(self.obj2_i2y)), 5, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
             return img
 
         elif num == 1:
             if self.click_count >= 1:
-                img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 8, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
+                img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 5, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
                 if self.click_count == 2:
                     startpoint_i1y, endpoint_i1y = self.epipo(self.camera2_w, self.obj2_w, 2)
-                    img = cv2.line(img, (0, int(startpoint_i1y)), (img.shape[1], int(endpoint_i1y)), (0,255,255), 5)
+                    img = cv2.line(img, (0, int(startpoint_i1y)), (img.shape[1], int(endpoint_i1y)), (0,255,255), 3)
             return img
 
         return None
-
 
 
 def main():
