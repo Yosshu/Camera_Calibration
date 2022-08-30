@@ -40,6 +40,10 @@ class Estimation:
         self.rvecs2 = rvecs2    # 　〃　　回転ベクトル
         self.tvecs2 = tvecs2    # 　〃　　並進ベクトル
 
+        h,  w = img_axes2.shape[:2]
+        self.newcameramtx, self.roi = cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
+        self.newcameramtx2, self.roi2 = cv2.getOptimalNewCameraMatrix(mtx2,dist2,(w,h),1,(w,h))
+
         self.imgpoints = imgpoints      # 1カメで見つかったチェッカーボードの交点の画像座標
         self.imgpoints2 = imgpoints2    # 1カメで               〃
         self.tate = tate                # 検出するチェッカーボードの交点の縦の数
@@ -60,6 +64,7 @@ class Estimation:
         self.img_line = []          # 黄色の線を引いた2カメの画像
         self.SF = []                # スケールファクタ [X軸座標, Y軸座標, Z軸座標]
         self.pn = [1, 1, 1]         # 1 or -1，ワールド座標がプラスかマイナスか，出力する直前にかける [X軸座標, Y軸座標, Z軸座標]
+        self.origin = []
 
         self.camera1_w = []         # 1カメのワールド座標
         self.obj1_w = []
@@ -87,6 +92,8 @@ class Estimation:
             line1x = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
             line2x = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
             res_x = self.distance_2lines(line1x, line2x)
+            if i == 0:
+                self.origin = res_x
             std_w_x.append(res_x[0])
 
         std_diffx = []
@@ -172,9 +179,9 @@ class Estimation:
 
             #cv2.imshow('Axes2',img_line2)           # 2カメ画像の線上のどの点を選んだかをオレンジの点で描画
             result = [0,0,0]                        # 結果として出力するワールド座標値を定義
-            result[0] = (self.pn[0] * res[0]) / self.SF[0]           # スケールファクタで割る
-            result[1] = (self.pn[1] * res[1]) / self.SF[1]
-            result[2] = (self.pn[2] * res[2]) / self.SF[2]
+            result[0] = (self.pn[0] * (res[0]-self.origin[0])) / self.SF[0]           # スケールファクタで割る
+            result[1] = (self.pn[1] * (res[1]-self.origin[1])) / self.SF[1]
+            result[2] = (self.pn[2] * (res[2]-self.origin[2])) / self.SF[2]
             
             result[0] = round(result[0], 4)
             result[1] = round(result[1], 4)
@@ -184,15 +191,19 @@ class Estimation:
             
     def line_SEpoint(self, x, y, num):      # 始点（カメラ）と終点（正規化画像座標）のワールド座標を求める関数，numは1カメか2カメか
         if num == 1:
-            undist_i1 = cv2.undistortPoints(np.float32([x,y]), self.mtx, self.dist, None, self.mtx)
+            """
+            undist_i1 = cv2.undistortPoints(np.float32([x,y]), self.mtx, self.dist, None, self.newcameramtx)
             obj_i1x = undist_i1[0][0][0]                                            # 対象物の1カメ画像座標
             obj_i1y = undist_i1[0][0][1]
+            """
+            obj_i1x = x                                            # 対象物の1カメ画像座標
+            obj_i1y = y
 
             obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
             obj_n1y = (obj_i1y - self.mtx[1][2]) / self.mtx[1][1]
             obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
-            #obj1_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
-            obj1_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                    # obj_n1を世界座標系に変換              Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+            obj1_w = (np.linalg.inv(self.R)) @ (np.array(obj_n1) - np.array(self.tvecs))
+            #obj1_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                    # obj_n1を世界座標系に変換              Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
             
             #self.camera1_w = (np.linalg.inv(R)) @ (np.array([[0], [0], [0]]) - np.array(tvecs))     # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
             camera1_w = (self.R.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))       # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
@@ -200,9 +211,13 @@ class Estimation:
             return camera1_w, obj1_w
 
         elif num == 2:
-            undist_i2 = cv2.undistortPoints(np.float32([x,y]), self.mtx2, self.dist2, None, self.mtx2)
+            """
+            undist_i2 = cv2.undistortPoints(np.float32([x,y]), self.mtx2, self.dist2, None, self.newcameramtx2)
             obj_i2x = undist_i2[0][0][0]                                            # 対象物の2カメ画像座標
             obj_i2y = undist_i2[0][0][1]
+            """
+            obj_i2x = x                                            # 対象物の1カメ画像座標
+            obj_i2y = y
 
             obj_n2x = (obj_i2x - self.mtx2[0][2]) / self.mtx2[0][0]                   # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
             obj_n2y = (obj_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
@@ -284,11 +299,9 @@ class Estimation:
 
         q1[0]=-q1[0]
         q1[1]=-q1[1]
-        #q1[2]=-q1[2]
 
         q2[0]=-q2[0]
         q2[1]=-q2[1]
-        #q2[2]=-q2[2]
 
         # XYZ座標の候補が2つあるため，平均をとる
         q3x = (q1[0]+q2[0])
@@ -305,6 +318,7 @@ class Estimation:
                 img = cv2.line(img, (0, int(startpoint_i2y)), (img.shape[1], int(endpoint_i2y)), (0,255,255), 3)
                 if self.click_count == 2:
                     img = cv2.circle(img, (int(self.obj2_i2x),int(self.obj2_i2y)), 5, (0, 165, 255), thickness=-1)    # 線上のどの点を選択したのかを描画
+            #img = cv2.undistort(img, self.mtx2, self.dist2, None, self.newcameramtx2)
             return img
 
         elif num == 1:
@@ -313,6 +327,7 @@ class Estimation:
                 if self.click_count == 2:
                     startpoint_i1y, endpoint_i1y = self.epipo(self.camera2_w, self.obj2_w, 2)
                     img = cv2.line(img, (0, int(startpoint_i1y)), (img.shape[1], int(endpoint_i1y)), (0,255,255), 3)
+            #img = cv2.undistort(img, self.mtx, self.dist, None, self.newcameramtx)
             return img
 
         return None
