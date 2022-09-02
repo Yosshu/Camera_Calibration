@@ -18,7 +18,7 @@ def axes_check(img, tate, yoko, objp, criteria, axis):
     objpoints0 = []
     imgpoints0 = []
     gray0 = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-    ret0, corners0 = cv2.findChessboardCorners(gray0, (yoko,tate),None)
+    ret0, corners0 = cv2.findCirclesGrid(gray0, (yoko,tate),cv2.CALIB_CB_SYMMETRIC_GRID)
     if ret0 == True:
         objpoints0.append(objp)      # object point
         corners02 = cv2.cornerSubPix(gray0,corners0,(11,11),(-1,-1),criteria) # 精度を上げている
@@ -40,9 +40,9 @@ class Estimation:
         self.rvecs2 = rvecs2    # 　〃　　回転ベクトル
         self.tvecs2 = tvecs2    # 　〃　　並進ベクトル
 
-        h,  w = img_axes2.shape[:2]
-        self.newcameramtx, self.roi = cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
-        self.newcameramtx2, self.roi2 = cv2.getOptimalNewCameraMatrix(mtx2,dist2,(w,h),1,(w,h))
+        #h,  w = img_axes2.shape[:2]
+        #self.newcameramtx, self.roi = cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
+        #self.newcameramtx2, self.roi2 = cv2.getOptimalNewCameraMatrix(mtx2,dist2,(w,h),1,(w,h))
 
         self.imgpoints = imgpoints      # 1カメで見つかったチェッカーボードの交点の画像座標
         self.imgpoints2 = imgpoints2    # 1カメで               〃
@@ -393,12 +393,12 @@ def main():
             gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
             _, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
             # Find the chess board corners　交点を見つける
-            ret, corners = cv2.findChessboardCorners(img_otsu, (yoko,tate),None)
+            ret, corners = cv2.findCirclesGrid(img_otsu, (yoko,tate),cv2.CALIB_CB_SYMMETRIC_GRID)
 
             gray2 = cv2.cvtColor(frame2,cv2.COLOR_BGR2GRAY)
             _, img_otsu2 = cv2.threshold(gray2, 0, 255, cv2.THRESH_OTSU)
             # Find the chess board corners　交点を見つける
-            ret2, corners2 = cv2.findChessboardCorners(img_otsu2, (yoko,tate),None)
+            ret2, corners2 = cv2.findCirclesGrid(img_otsu2, (yoko,tate),cv2.CALIB_CB_SYMMETRIC_GRID)
 
             if ret == True and ret2 == True:
                 break
@@ -425,8 +425,8 @@ def main():
     ret2, img_otsu2 = cv2.threshold(gray2, 0, 255, cv2.THRESH_OTSU)
 
     # Find the chess board corners　交点を見つける
-    ret, corners = cv2.findChessboardCorners(img_otsu, (yoko,tate),None)
-    ret2, corners2 = cv2.findChessboardCorners(img_otsu2, (yoko,tate),None)
+    ret, corners = cv2.findCirclesGrid(img_otsu, (yoko,tate),cv2.CALIB_CB_SYMMETRIC_GRID)
+    ret2, corners2 = cv2.findCirclesGrid(img_otsu2, (yoko,tate),cv2.CALIB_CB_SYMMETRIC_GRID)
     # If found, add object points, image points (after refining them)　交点が見つかったなら、描画
     if ret and ret2 == True:
         objpoints.append(objp)      # object point
