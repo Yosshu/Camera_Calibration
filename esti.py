@@ -40,9 +40,9 @@ class Estimation:
         self.rvecs2 = rvecs2    # 　〃　　回転ベクトル
         self.tvecs2 = tvecs2    # 　〃　　並進ベクトル
 
-        #h,  w = img_axes2.shape[:2]
-        #self.newcameramtx, self.roi = cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
-        #self.newcameramtx2, self.roi2 = cv2.getOptimalNewCameraMatrix(mtx2,dist2,(w,h),1,(w,h))
+        h,  w = img_axes2.shape[:2]
+        self.newcameramtx, self.roi = cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
+        self.newcameramtx2, self.roi2 = cv2.getOptimalNewCameraMatrix(mtx2,dist2,(w,h),1,(w,h))
 
         self.imgpoints = imgpoints      # 1カメで見つかったチェッカーボードの交点の画像座標
         self.imgpoints2 = imgpoints2    # 1カメで               〃
@@ -75,30 +75,29 @@ class Estimation:
 
 
     def ScaleFactor(self):       # スケールファクタを求める関数
-        stdnum = 3         # 基準点の個数，stdside=1,2はnp.mean()でエラー出るからダメ，stdside>=3
-        imgpoints_ravel = np.ravel(self.imgpoints)   # 1行に並べる，点の選択後に直す
-        imgpoints2_ravel = np.ravel(self.imgpoints2)
+        stdnum_z = 2         # 基準点の個数，stdside=1,2はnp.mean()でエラー出るからダメ，stdside>=3
+        #print(self.imgpoints[0][60][0][1])
+        #cv2.circle(self.img_axes2, (int(stdpoints2z[0][0][0]),int(stdpoints2z[0][0][1])), 8, (0, 165, 255), thickness=-1)
+        #cv2.imshow("self.img_axes2", self.img_axes2)
+
+        std_w = []
+        for i in range(self.tate):
+            for j in range(self.yoko):
+                k = i*self.yoko + j
+                camera1_w, obj1_w = self.line_SEpoint(self.imgpoints[0][k][0][0], self.imgpoints[0][k][0][1], 1)
+                camera2_w, obj2_w = self.line_SEpoint(self.imgpoints2[0][k][0][0], self.imgpoints2[0][k][0][1], 2)
+                line1x = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
+                line2x = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
+                res = self.distance_2lines(line1x, line2x)
+                std_w.append(res)
+        self.origin = std_w[0]
 
         # X軸方向
-        stdpoints_x = imgpoints_ravel[0:stdnum*2]
-        stdpoints2_x = imgpoints2_ravel[0:stdnum*2]
-        stdpoints_x = stdpoints_x.reshape([stdnum, 2])  # (x,y)をstdsideの2乗個の形に直す
-        stdpoints2_x = stdpoints2_x.reshape([stdnum, 2])
-
-        std_w_x = []
-        for i in range(stdnum):
-            camera1_w, obj1_w = self.line_SEpoint(stdpoints_x[i][0], stdpoints_x[i][1], 1)
-            camera2_w, obj2_w = self.line_SEpoint(stdpoints2_x[i][0], stdpoints2_x[i][1], 2)
-            line1x = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
-            line2x = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
-            res_x = self.distance_2lines(line1x, line2x)
-            if i == 0:
-                self.origin = res_x
-            std_w_x.append(res_x[0])
-
         std_diffx = []
-        for i in range(stdnum-1):
-            std_diffx.append(std_w_x[i+1] - std_w_x[i])
+        for i in range(self.tate):
+            for j in range(self.yoko-1):
+                k = i*self.yoko + j
+                std_diffx.append(std_w[k+1][0] - std_w[k][0])
         SFx = np.mean(std_diffx)    # 差の平均
         if SFx > 0:
             self.pn[0] = 1
@@ -106,29 +105,11 @@ class Estimation:
             self.pn[0] = -1
 
         # Y軸方向
-        stdpoints_y = []
-        stdpoints2_y = []
-        for i in range(stdnum):
-            stdpoints_y = np.append(stdpoints_y, imgpoints_ravel[i*self.yoko*2])
-            stdpoints_y = np.append(stdpoints_y, imgpoints_ravel[i*self.yoko*2+1])
-            stdpoints2_y = np.append(stdpoints2_y, imgpoints2_ravel[i*self.yoko*2])
-            stdpoints2_y = np.append(stdpoints2_y, imgpoints2_ravel[i*self.yoko*2+1])
-        stdpoints_y = stdpoints_y.reshape([stdnum, 2])  # (x,y)をstdsideの2乗個の形に直す
-        stdpoints2_y = stdpoints2_y.reshape([stdnum, 2])
-        
-
-        std_w_y = []
-        for i in range(stdnum):
-            camera1_w, obj1_w = self.line_SEpoint(stdpoints_y[i][0], stdpoints_y[i][1], 1)
-            camera2_w, obj2_w = self.line_SEpoint(stdpoints2_y[i][0], stdpoints2_y[i][1], 2)
-            line1y = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
-            line2y = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
-            res_y = self.distance_2lines(line1y, line2y)
-            std_w_y.append(res_y[1])
-
         std_diffy = []
-        for i in range(stdnum-1):     
-            std_diffy.append(std_w_y[i+1] - std_w_y[i])
+        for i in range(self.tate-1):
+            for j in range(self.yoko):
+                k = i*self.yoko + j
+                std_diffy.append(std_w[k + self.yoko][1] - std_w[k][1])
         SFy = np.mean(std_diffy)    # 差の平均
         if SFy > 0:
             self.pn[1] = 1
@@ -136,21 +117,23 @@ class Estimation:
             self.pn[1] = -1
 
         # Z軸方向
-        std_w_z = []           
-        for i in range(stdnum):
-            stdpointsz, _ = cv2.projectPoints(np.float32([0,0,-i]), self.rvecs[-1], self.tvecs[-1], self.mtx, None)
-            stdpoints2z, _ = cv2.projectPoints(np.float32([0,0,-i]), self.rvecs2[-1], self.tvecs2[-1], self.mtx2, None)
-            camera1_w, obj1_w = self.line_SEpoint(stdpointsz[0][0][0], stdpointsz[0][0][1], 1)
-            camera2_w, obj2_w = self.line_SEpoint(stdpoints2z[0][0][0], stdpoints2z[0][0][1], 2)
-            #cv2.circle(self.img_axes2, (int(stdpoints2z[0][0][0]),int(stdpoints2z[0][0][1])), 8, (0, 165, 255), thickness=-1)
-            line1z = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
-            line2z = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
-            res_z = self.distance_2lines(line1z, line2z)
-            std_w_z.append(res_z[2])
-        #cv2.imshow("self.img_axes2", self.img_axes2)
+        std_w_z = []
+        for i in range(self.tate):
+            for j in range(self.yoko):
+                for k in range(stdnum_z+1):
+                    stdpointsz, _ = cv2.projectPoints(np.float32([j,i,-k]), self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
+                    stdpoints2z, _ = cv2.projectPoints(np.float32([j,i,-k]), self.rvecs2[-1], self.tvecs2[-1], self.mtx2, self.dist2)
+                    camera1_w, obj1_w = self.line_SEpoint(stdpointsz[0][0][0], stdpointsz[0][0][1], 1)
+                    camera2_w, obj2_w = self.line_SEpoint(stdpoints2z[0][0][0], stdpoints2z[0][0][1], 2)
+                    line1z = np.hstack((camera1_w[0].T, obj1_w[0].T)).reshape(2, 3)
+                    line2z = np.hstack((camera2_w[0].T, obj2_w[0].T)).reshape(2, 3)
+                    res_z = self.distance_2lines(line1z, line2z)
+                    std_w_z.append(res_z[2])
         std_diffz = []
-        for i in range(stdnum-1):
-            std_diffz.append(std_w_z[i+1]-std_w_z[i])
+        for i in range(self.yoko*self.tate):
+            for j in range(stdnum_z):
+                k = j + i*(stdnum_z+1)
+                std_diffz.append(std_w_z[k+1]-std_w_z[k])
         SFz = np.mean(std_diffz)
         if SFz > 0:
             self.pn[2] = 1
@@ -425,7 +408,8 @@ def main():
     ret2, img_otsu2 = cv2.threshold(gray2, 0, 255, cv2.THRESH_OTSU)
 
     # Find the chess board corners　交点を見つける
-    ret, corners = cv2.findChessboardCorners(img_otsu, (yoko,tate),None)
+    #cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE + cv2.CALIB_CB_FILTER_QUADS + cv2.CALIB_CB_FAST_CHECK
+    ret, corners = cv2.findChessboardCorners(img_otsu, (yoko,tate), None)
     ret2, corners2 = cv2.findChessboardCorners(img_otsu2, (yoko,tate),None)
     # If found, add object points, image points (after refining them)　交点が見つかったなら、描画
     if ret and ret2 == True:
