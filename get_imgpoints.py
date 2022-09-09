@@ -1,13 +1,12 @@
 import cv2
 import numpy as np
-import sympy
+
 
 class getImgpoints:
     def __init__(self):
         self.imgpoints1 = np.array([])
         self.imgpoints2 = np.array([])
         
-
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
         if event == cv2.EVENT_LBUTTONDOWN:          # 1カメ画像を左クリックしたら
             self.imgpoints1 = np.append(self.imgpoints1,(x,y)).reshape(-1,2)
@@ -48,8 +47,6 @@ class getImgpoints:
                 self.imgpoints2[-1][1] = self.imgpoints2[-1][1] + 1
             elif key == 83:
                 self.imgpoints2[-1][0] = self.imgpoints2[-1][0] + 1
-
-
     
     def printResult(self):
         show1 = []
@@ -63,6 +60,7 @@ class getImgpoints:
             show2.append(int(i[0]))
             show2.append(int(i[1]))
         print(show2)
+
 
 def main():
     gip = getImgpoints()
