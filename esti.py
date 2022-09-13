@@ -9,9 +9,9 @@ import math
 
 def draw(img, corners, imgpts):         # 座標軸を描画する関数
     #corner = tuple(corners[0].ravel())
-    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[0][0][0]), int(imgpts[0][0][1])), (255,0,0), 5)   # X軸 Blue
-    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[1][0][0]), int(imgpts[1][0][1])), (0,255,0), 5)   # Y軸 Green
-    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[2][0][0]), int(imgpts[2][0][1])), (0,0,255), 5)   # Z軸 Red
+    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[0][0][0]), int(imgpts[0][0][1])), (255,0,0), 3)   # X軸 Blue
+    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[1][0][0]), int(imgpts[1][0][1])), (0,255,0), 3)   # Y軸 Green
+    img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[2][0][0]), int(imgpts[2][0][1])), (0,0,255), 3)   # Z軸 Red
     return img
 
 def axes_check(img, tate, yoko, objp, criteria, axis):      # Z軸が正しく伸びているかを確認するための関数
@@ -40,11 +40,11 @@ class Estimation:
         self.rvecs2 = rvecs2            # 2カメの回転ベクトル
         self.tvecs2 = tvecs2            # 2カメの並進ベクトル
 
-        """
+        
         h,  w = img_axes2.shape[:2]
         self.newcameramtx, self.roi = cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
         self.newcameramtx2, self.roi2 = cv2.getOptimalNewCameraMatrix(mtx2,dist2,(w,h),1,(w,h))
-        """
+
 
         self.imgpoints = imgpoints      # 1カメで見つかったチェッカーボードの交点の画像座標
         self.imgpoints2 = imgpoints2    # 2カメで見つかったチェッカーボードの交点の画像座標
@@ -162,9 +162,9 @@ class Estimation:
             res = self.distance_2lines(line1x, line2x)                                  # 2本の直線の最接近点のワールド座標を求める
 
             result = [0,0,0]                                                            # 結果として出力するワールド座標値を定義
-            result[0] = (self.pn[0] * (res[0]-self.origin[0])) / self.SF[0]             # 原点で引いて，スケールファクタで割る
-            result[1] = (self.pn[1] * (res[1]-self.origin[1])) / self.SF[1] 
-            result[2] = (self.pn[2] * (res[2]-self.origin[2])) / self.SF[2]
+            result[0] = (self.pn[0] * (res[0])) / self.SF[0]             # 原点で引いて，スケールファクタで割る
+            result[1] = (self.pn[1] * (res[1])) / self.SF[1] 
+            result[2] = (self.pn[2] * (res[2])) / self.SF[2]
             
             result[0] = round(result[0], 4)                                             # 結果の値を四捨五入
             result[1] = round(result[1], 4)
@@ -176,14 +176,15 @@ class Estimation:
         if num == 1:
             """
             undist_i1 = cv2.undistortPoints(np.float32([x,y]), self.mtx, self.dist, None, self.newcameramtx)
-            obj_i1x = undist_i1[0][0][0]                                            # 対象物の1カメ画像座標
-            obj_i1y = undist_i1[0][0][1]
+            obj_n1x = undist_i1[0][0][0]                                            # 対象物の1カメ画像座標
+            obj_n1y = undist_i1[0][0][1]
             """
             obj_i1x = x                                                             # 対象物の1カメ画像座標
             obj_i1y = y
 
             obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
             obj_n1y = (obj_i1y - self.mtx[1][2]) / self.mtx[1][1]
+            
             obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
             obj1_w = (np.linalg.inv(self.R)) @ (np.array(obj_n1) - np.array(self.tvecs))
             #obj1_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                        # obj_n1を世界座標系に変換              Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
@@ -196,14 +197,15 @@ class Estimation:
         elif num == 2:
             """
             undist_i2 = cv2.undistortPoints(np.float32([x,y]), self.mtx2, self.dist2, None, self.newcameramtx2)
-            obj_i2x = undist_i2[0][0][0]                                            # 対象物の2カメ画像座標
-            obj_i2y = undist_i2[0][0][1]
+            obj_n2x = undist_i2[0][0][0]                                            # 対象物の2カメ画像座標
+            obj_n2y = undist_i2[0][0][1]
             """
             obj_i2x = x                                                             # 対象物の1カメ画像座標
             obj_i2y = y
 
             obj_n2x = (obj_i2x - self.mtx2[0][2]) / self.mtx2[0][0]                 # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
             obj_n2y = (obj_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
+            
             obj_n2 = [[obj_n2x], [obj_n2y], [1]]                                    # 対象物の2カメ正規化画像座標系を2カメカメラ座標系に変換
             #obj1_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
             obj2_w = (self.R2.T) @ (np.array(obj_n2) - np.array(self.tvecs2))                       # obj_n2を世界座標系に変換              Ｗ = Ｒ2^T (Ｃ2 - ｔ2)
@@ -298,18 +300,18 @@ class Estimation:
         if num == 2:                                                                                                    # 2カメ画像に対しての処理の場合
             if self.click_count >= 1:                                                                                   # 1カメ画像をクリックしていたら，
                 startpoint_i2y, endpoint_i2y = self.epipo(self.camera1_w, self.obj1_w, 1)                               # エピポーラ線を求める
-                img = cv2.line(img, (0, int(startpoint_i2y)), (img.shape[1], int(endpoint_i2y)), (0,255,255), 3)        # エピポーラ線を描画
+                img = cv2.line(img, (0, int(startpoint_i2y)), (img.shape[1], int(endpoint_i2y)), (0,255,255), 2)        # エピポーラ線を描画
                 if self.click_count == 2:                                                                               # 2カメ画像をクリックしていたら，
-                    img = cv2.circle(img, (int(self.obj2_i2x),int(self.obj2_i2y)), 5, (0, 165, 255), thickness=-1)      # クリックした点を描画
+                    img = cv2.circle(img, (int(self.obj2_i2x),int(self.obj2_i2y)), 4, (0, 165, 255), thickness=-1)      # クリックした点を描画
             #img = cv2.undistort(img, self.mtx2, self.dist2, None, self.newcameramtx2)
             return img
 
         elif num == 1:                                                                                                  # 1カメ画像に対しての処理の場合
             if self.click_count >= 1:                                                                                   # 1カメ画像をクリックしていたら，
-                img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 5, (0, 165, 255), thickness=-1)          # クリックした点を描画
+                img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 4, (0, 165, 255), thickness=-1)          # クリックした点を描画
                 if self.click_count == 2:                                                                               # 2カメ画像をクリックしていたら，
                     startpoint_i1y, endpoint_i1y = self.epipo(self.camera2_w, self.obj2_w, 2)                           # エピポーラ線を求める
-                    img = cv2.line(img, (0, int(startpoint_i1y)), (img.shape[1], int(endpoint_i1y)), (0,255,255), 3)    # エピポーラ線を描画
+                    img = cv2.line(img, (0, int(startpoint_i1y)), (img.shape[1], int(endpoint_i1y)), (0,255,255), 2)    # エピポーラ線を描画
             #img = cv2.undistort(img, self.mtx, self.dist, None, self.newcameramtx)
             return img
 
@@ -318,8 +320,8 @@ class Estimation:
 
 def main():
     # 検出するチェッカーボードの交点の数
-    tate = 3
-    yoko = 4
+    tate = 7
+    yoko = 10
     # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -389,8 +391,8 @@ def main():
                 _, img_otsu2 = cv2.threshold(gray2, 0, 255, cv2.THRESH_OTSU)
                 # Find the chess board corners　交点を見つける
                 ret2, corners2 = cv2.findChessboardCorners(img_otsu2, (yoko,tate),None)
-
                 if ret == True and ret2 == True:
+                    print("OK")
                     break
             elif key == ord('a'):
                 ret01, corners02, imgpts0 = axes_check(frame1, tate, yoko, objp, criteria, axis)
