@@ -19,7 +19,8 @@ class getImgpoints:
         if event == cv2.EVENT_RBUTTONDOWN and self.imgpoints2.size != 0:          # 2カメ画像を右クリックしたら
             self.imgpoints2 = np.delete(self.imgpoints2, -1, axis=0)
     
-    def showPoints(self, img, num):
+    def showPoints(self, img0, num):
+        img = img0.copy()
         if num == 1:
             for i in self.imgpoints1:
                 img = cv2.circle(img, (int(i[0]),int(i[1])), 2, (255, 0, 255), thickness=-1)
@@ -39,14 +40,15 @@ class getImgpoints:
             elif key == ord('d'):
                 self.imgpoints1[-1][0] = self.imgpoints1[-1][0] + 1
         if self.imgpoints2.size != 0:
-            if key == 82:
+            if key == ord('i'):
                 self.imgpoints2[-1][1] = self.imgpoints2[-1][1] - 1
-            elif key == 81:
+            elif key == ord('j'):
                 self.imgpoints2[-1][0] = self.imgpoints2[-1][0] - 1
-            elif key == 84:
+            elif key == ord('k'):
                 self.imgpoints2[-1][1] = self.imgpoints2[-1][1] + 1
-            elif key == 83:
+            elif key == ord('l'):
                 self.imgpoints2[-1][0] = self.imgpoints2[-1][0] + 1
+                
     
     def printResult(self):
         show1 = []
@@ -64,21 +66,22 @@ class getImgpoints:
 
 def main():
     gip = getImgpoints()
+    cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
+    ret, frame1 = cap1.read()           #カメラからの画像取得
+    cap1.release()
+    cap2 = cv2.VideoCapture(2)
+    ret2, frame2 = cap2.read()
+    cap2.release()
     flag = 0
     while True:
-        cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
-        ret, frame1 = cap1.read()           #カメラからの画像取得
         if ret:
             img1 = gip.showPoints(frame1,1)
             cv2.imshow('camera1', img1)      #カメラの画像の出力
-        cap1.release()
-
-        cap2 = cv2.VideoCapture(2)
-        ret2, frame2 = cap2.read()
         if ret2:
             img2 = gip.showPoints(frame2,2)
             cv2.imshow('camera2', img2)
-        cap2.release()
+        
+
 
         if flag == 0:
             cv2.setMouseCallback('camera1', gip.onMouse)        # 1カメの画像に対するクリックイベント
@@ -89,8 +92,14 @@ def main():
         if key == 27:   #Escで終了
             cv2.destroyAllWindows()
             break
-        if key == (ord('w') or ord('a') or ord('s') or ord('d') or 81 or 82 or 83 or 84):
-            gip.adjust(key)
+        gip.adjust(key)
+        if key == ord('r'):
+            cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
+            ret, frame1 = cap1.read()           #カメラからの画像取得
+            cap1.release()
+            cap2 = cv2.VideoCapture(2)
+            ret2, frame2 = cap2.read()
+            cap2.release()
 
     gip.printResult()
     #cv2.imwrite('1.png', frame1)
