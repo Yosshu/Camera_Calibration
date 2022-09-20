@@ -320,8 +320,8 @@ class Estimation:
 
 def main():
     # 検出するチェッカーボードの交点の数
-    tate = 7
-    yoko = 10
+    tate = 3
+    yoko = 4
     # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -335,7 +335,7 @@ def main():
     imgpoints2 = [] # 2d points in image plane.
 
     # 軸の定義
-    axis = np.float32([[3,0,0], [0,3,0], [0,0,-3]]).reshape(-1,3)
+    axis = np.float32([[2,0,0], [0,2,0], [0,0,-2]]).reshape(-1,3)
 
     val = None
     while True:
@@ -437,8 +437,8 @@ def main():
         gray2= cv2.cvtColor(frame2,cv2.COLOR_BGR2GRAY)
         cv2.imshow('camera1' , frame1)
         cv2.imshow('camera2' , frame2)
-        corners = np.array([436, 215, 400, 202, 360, 190, 326, 180, 423, 245, 384, 233, 346, 220, 309, 210, 408, 282, 369, 269, 331, 255, 293, 242],dtype='float32').reshape(-1,1,2)
-        corners2 = np.array([359, 221, 323, 229, 288, 239, 251, 251, 373, 248, 339, 260, 303, 269, 266, 283, 390, 281, 355, 291, 319, 304, 279, 315],dtype='float32').reshape(-1,1,2)
+        corners = np.array([254, 145, 289, 156, 327, 169, 368, 182, 412, 197, 459, 213, 224, 162, 262, 175, 300, 189, 342, 204, 387, 220, 436, 238, 192, 181, 229, 195, 270, 212, 313, 228, 359, 246, 410, 266, 156, 202, 194, 218, 235, 236, 280, 254, 329, 275, 381, 298, 115, 226, 155, 243, 197, 263, 243, 284, 293, 308, 349, 334],dtype='float32').reshape(-1,1,2)
+        corners2 = np.array([125, 153, 180, 140, 235, 128, 290, 116, 342, 106, 392, 98, 131, 187, 191, 173, 250, 159, 308, 147, 364, 136, 416, 126, 140, 226, 204, 211, 268, 196, 329, 183, 388, 170, 443, 158, 151, 272, 220, 254, 288, 239, 354, 223, 416, 208, 472, 194, 164, 326, 238, 307, 312, 288, 382, 269, 447, 252, 505, 235],dtype='float32').reshape(-1,1,2)
         corners12 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
         corners22 = cv2.cornerSubPix(gray2,corners2,(11,11),(-1,-1),criteria)
         imgpoints.append(corners12)
