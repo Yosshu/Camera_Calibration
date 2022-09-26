@@ -40,10 +40,29 @@ class Estimation:
         self.rvecs2 = rvecs2            # 2カメの回転ベクトル
         self.tvecs2 = tvecs2            # 2カメの並進ベクトル
 
-        
+        self.k1_1 = dist[0][0] 
+        self.k2_1 = dist[0][1] 
+        self.p1_1 = dist[0][2] 
+        self.p2_1 = dist[0][3] 
+        self.k3_1 = dist[0][4] 
+        self.k4_1 = dist[0][5] 
+        self.k5_1 = dist[0][6] 
+        self.k6_1 = dist[0][7] 
+
+        self.k1_2 = dist2[0][0] 
+        self.k2_2 = dist2[0][1] 
+        self.p1_2 = dist2[0][2] 
+        self.p2_2 = dist2[0][3] 
+        self.k3_2 = dist2[0][4] 
+        self.k4_2 = dist2[0][5] 
+        self.k5_2 = dist2[0][6] 
+        self.k6_2 = dist2[0][7] 
+
+        """
         h,  w = img_axes2.shape[:2]
         self.newcameramtx, self.roi = cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
         self.newcameramtx2, self.roi2 = cv2.getOptimalNewCameraMatrix(mtx2,dist2,(w,h),1,(w,h))
+        """
 
 
         self.imgpoints = imgpoints      # 1カメで見つかったチェッカーボードの交点の画像座標
@@ -320,8 +339,8 @@ class Estimation:
 
 def main():
     # 検出するチェッカーボードの交点の数
-    tate = 3
-    yoko = 4
+    tate = 4
+    yoko = 5
     # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -453,8 +472,8 @@ def main():
     #cv2.imshow('drawChessboardCorners',img)
     cv2.waitKey(500)
 
-    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
-    ret2, mtx2, dist2, rvecs2, tvecs2 = cv2.calibrateCamera(objpoints, imgpoints2, gray2.shape[::-1],None,None)
+    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None,flags=cv2.CALIB_RATIONAL_MODEL)
+    ret2, mtx2, dist2, rvecs2, tvecs2 = cv2.calibrateCamera(objpoints, imgpoints2, gray2.shape[::-1],None,None,flags=cv2.CALIB_RATIONAL_MODEL)
     """
     ret：
     mtx：camera matrix，カメラ行列(内部パラメータ)
