@@ -29,6 +29,11 @@ def axes_check(img, tate, yoko, objp, criteria, axis):      # Z軸が正しく�
         return ret0, corners02, imgpts0
     return ret0, None, None
 
+def drawpoints(img, points):
+    for i in points:
+        img = cv2.circle(img, (int(i[0]),int(i[1])), 2, (255, 0, 255), thickness=-1)
+    return img
+
 class Estimation:
     def __init__(self, mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, img_axes2, imgpoints, imgpoints2, tate, yoko):
         self.mtx = mtx                  # 1カメの内部パラメータ
@@ -355,6 +360,40 @@ class Estimation:
         return None
 
 
+
+    def projection(self, wx, wy, wz, num):
+        if num == 1:
+            t = self.tvecs[0]
+            C = self.R @ [[wx], [wy], [wz]] + t
+            N = C/C[2]
+            I = self.mtx @ N
+            ix = I[0][0]
+            iy = I[1][0]
+            return ix, iy
+        elif num == 2:
+            t2 = self.tvecs2[0]
+            C = self.R2 @ [[wx], [wy], [wz]] + t2
+            N = C/C[2]
+            I = self.mtx2 @ N
+            ix = I[0][0]
+            iy = I[1][0]
+            return ix, iy
+        return None, None
+
+    def stdprojection(self):
+        res = []
+        for i in range(self.yoko):
+            for j in range(self.tate):
+                ix, iy = self.projection(i,j,0,1)
+                res.append([ix,iy])
+        res2 = []
+        for i in range(self.yoko):
+            for j in range(self.tate):
+                ix, iy = self.projection(i,j,0,2)
+                res2.append([ix,iy])
+        return res, res2
+
+
 def main():
     # 検出するチェッカーボードの交点の数
     tate = 4
@@ -506,6 +545,14 @@ def main():
     imgpts2, _ = cv2.projectPoints(axis, rvecs2[-1], tvecs2[-1], mtx2, dist2)
     
     es = Estimation(mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, frame2, imgpoints, imgpoints2, tate, yoko)
+    stdarray, stdarray2 = es.stdprojection()
+    print(stdarray)
+
+    frame1s = drawpoints(frame1, stdarray)
+    frame2s = drawpoints(frame2, stdarray2)
+    cv2.imshow('frame1s', frame1s)
+    cv2.imshow('frame2s', frame2s)
+
 
     cv2.setMouseCallback('camera1', es.onMouse)         # 1カメの画像に対するクリックイベント
     cv2.setMouseCallback('camera2', es.onMouse2)        # 2カメの画像に対するクリックイベント
