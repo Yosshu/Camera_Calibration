@@ -190,7 +190,8 @@ class Estimation:
             result[2] = round(result[2], 4)
             print(f'{result}\n')                                                        # 最終結果であるワールド座標を出力
             self.click_count = 2                                                        #  1カメ画像をクリックした後，2カメの画像をクリックしたことを伝える
-            
+
+
     def line_SEpoint(self, x, y, num):      # 始点（カメラ）と終点（正規化画像座標）のワールド座標を求める関数，numは1カメか2カメか
         if num == 1:
             """
@@ -234,6 +235,23 @@ class Estimation:
 
             return camera2_w, obj2_w
 
+        return None, None
+
+
+    def undist_npoint(self, x, y, num):
+        r = math.sqrt(x**2 + y**2)
+        if num == 1:
+            nume = 1 + self.k1_1*r**2 + self.k2_1*r**4 + self.k3_1**6
+            deno = 1 + self.k4_1*r**2 + self.k5_1*r**4 + self.k6_1**6
+            undist_n1x = x*(nume/deno) + 2*self.p1_1*x*y + self.p2_1*(r**2 + 2*x**2)
+            undist_n1y = y*(nume/deno) + self.p1_1*(r**2 + 2*y**2) + 2*self.p2_1*x*y
+            return undist_n1x, undist_n1y
+        elif num == 2:
+            nume = 1 + self.k1_2*r**2 + self.k2_2*r**4 + self.k3_2**6
+            deno = 1 + self.k4_2*r**2 + self.k5_2*r**4 + self.k6_2**6
+            undist_n2x = x*(nume/deno) + 2*self.p1_2*x*y + self.p2_2*(r**2 + 2*x**2)
+            undist_n2y = y*(nume/deno) + self.p1_2*(r**2 + 2*y**2) + 2*self.p2_2*x*y
+            return undist_n2x, undist_n2y
         return None, None
 
 
