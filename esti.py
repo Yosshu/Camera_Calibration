@@ -25,13 +25,17 @@ def axes_check(img, tate, yoko, objp, criteria, axis):      # Z軸が正しく�
         imgpoints0.append(corners02)
         cv2.waitKey(500)
         ret, mtx0, dist0, rvecs0, tvecs0 = cv2.calibrateCamera(objpoints0, imgpoints0, gray0.shape[::-1],None,None)
+        # Find the rotation and translation vectors.
+        rvecs0, tvecs0, _ = cv2.solvePnPRansac(objp, corners02, mtx0, dist0)
+
         imgpts0, _ = cv2.projectPoints(axis, rvecs0[-1], tvecs0[-1], mtx0, dist0)
         return ret0, corners02, imgpts0
     return ret0, None, None
 
-def drawpoints(img, points):
+def drawpoints(img, points,b,g,r):
     for i in points:
-        img = cv2.circle(img, (int(i[0]),int(i[1])), 2, (255, 0, 255), thickness=-1)
+        if 0<=i[0]<img.shape[1] and 0<=i[1]<img.shape[0]:
+            img = cv2.circle(img, (int(i[0]),int(i[1])), 2, (b, g, r), thickness=-1)
     return img
 
 class Estimation:
@@ -45,6 +49,7 @@ class Estimation:
         self.rvecs2 = rvecs2            # 2カメの回転ベクトル
         self.tvecs2 = tvecs2            # 2カメの並進ベクトル
 
+        """
         self.k1_1 = dist[0][0] 
         self.k2_1 = dist[0][1] 
         self.p1_1 = dist[0][2] 
@@ -62,6 +67,7 @@ class Estimation:
         self.k4_2 = dist2[0][5] 
         self.k5_2 = dist2[0][6] 
         self.k6_2 = dist2[0][7] 
+        """
 
         """
         h,  w = img_axes2.shape[:2]
@@ -246,14 +252,14 @@ class Estimation:
     def undist_npoint(self, x, y, num):
         r = math.sqrt(x**2 + y**2)
         if num == 1:
-            nume = 1 + self.k1_1*r**2 + self.k2_1*r**4 + self.k3_1**6
-            deno = 1 + self.k4_1*r**2 + self.k5_1*r**4 + self.k6_1**6
+            nume = 1 + self.k1_1*r**2 + self.k2_1*r**4 + self.k3_1*r**6
+            deno = 1 + self.k4_1*r**2 + self.k5_1*r**4 + self.k6_1*r**6
             undist_n1x = x*(nume/deno) + 2*self.p1_1*x*y + self.p2_1*(r**2 + 2*x**2)
             undist_n1y = y*(nume/deno) + self.p1_1*(r**2 + 2*y**2) + 2*self.p2_1*x*y
             return undist_n1x, undist_n1y
         elif num == 2:
-            nume = 1 + self.k1_2*r**2 + self.k2_2*r**4 + self.k3_2**6
-            deno = 1 + self.k4_2*r**2 + self.k5_2*r**4 + self.k6_2**6
+            nume = 1 + self.k1_2*r**2 + self.k2_2*r**4 + self.k3_2*r**6
+            deno = 1 + self.k4_2*r**2 + self.k5_2*r**4 + self.k6_2*r**6
             undist_n2x = x*(nume/deno) + 2*self.p1_2*x*y + self.p2_2*(r**2 + 2*x**2)
             undist_n2y = y*(nume/deno) + self.p1_2*(r**2 + 2*y**2) + 2*self.p2_2*x*y
             return undist_n2x, undist_n2y
@@ -360,7 +366,6 @@ class Estimation:
         return None
 
 
-
     def projection(self, wx, wy, wz, num):
         if num == 1:
             t = self.tvecs[0]
@@ -380,24 +385,46 @@ class Estimation:
             return ix, iy
         return None, None
 
-    def stdprojection(self):
+    def stdprojection(self,z):
         res = []
-        for i in range(self.yoko):
-            for j in range(self.tate):
-                ix, iy = self.projection(i,j,0,1)
+        netpoints1 = np.arange(-2, 10, 0.1)
+        netpoints2 = np.arange(-2, 10, 1)
+        for i in netpoints1:
+            for j in netpoints2 :
+                ix, iy = self.projection(i,j,z,1)
+                res.append([ix,iy])
+        for i in netpoints2:
+            for j in netpoints1 :
+                ix, iy = self.projection(i,j,z,1)
                 res.append([ix,iy])
         res2 = []
-        for i in range(self.yoko):
-            for j in range(self.tate):
-                ix, iy = self.projection(i,j,0,2)
+        for i in netpoints1:
+            for j in netpoints2:
+                ix, iy = self.projection(i,j,z,2)
+                res2.append([ix,iy])
+        for i in netpoints2:
+            for j in netpoints1:
+                ix, iy = self.projection(i,j,z,2)
                 res2.append([ix,iy])
         return res, res2
 
 
+    def undist_pts(self, pts_uv, num):
+        if num == 1:
+            pts_uv = cv2.undistortPoints(pts_uv, self.mtx, self.dist, P=self.mtx)
+            pts_uv = pts_uv[0][0]
+            pts_uv = [pts_uv[0],pts_uv[1]]
+        elif num == 2:
+            pts_uv = cv2.undistortPoints(pts_uv, self.mtx2, self.dist2, P=self.mtx2)
+            pts_uv = pts_uv[0][0]
+            pts_uv = [pts_uv[0],pts_uv[1]]
+        return pts_uv
+
+
 def main():
     # 検出するチェッカーボードの交点の数
-    tate = 4
-    yoko = 5
+    tate = 3
+    yoko = 4
     # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -423,6 +450,7 @@ def main():
         img_axes0 = []
         imgpts0 = []
         corners02 = []
+
 
         img_axes0_2 = []
         imgpts0_2 = []
@@ -513,8 +541,8 @@ def main():
         gray2= cv2.cvtColor(frame2,cv2.COLOR_BGR2GRAY)
         cv2.imshow('camera1' , frame1)
         cv2.imshow('camera2' , frame2)
-        corners = np.array([254, 145, 289, 156, 327, 169, 368, 182, 412, 197, 459, 213, 224, 162, 262, 175, 300, 189, 342, 204, 387, 220, 436, 238, 192, 181, 229, 195, 270, 212, 313, 228, 359, 246, 410, 266, 156, 202, 194, 218, 235, 236, 280, 254, 329, 275, 381, 298, 115, 226, 155, 243, 197, 263, 243, 284, 293, 308, 349, 334],dtype='float32').reshape(-1,1,2)
-        corners2 = np.array([125, 153, 180, 140, 235, 128, 290, 116, 342, 106, 392, 98, 131, 187, 191, 173, 250, 159, 308, 147, 364, 136, 416, 126, 140, 226, 204, 211, 268, 196, 329, 183, 388, 170, 443, 158, 151, 272, 220, 254, 288, 239, 354, 223, 416, 208, 472, 194, 164, 326, 238, 307, 312, 288, 382, 269, 447, 252, 505, 235],dtype='float32').reshape(-1,1,2)
+        corners = np.array([290, 212, 338, 235, 395, 262, 457, 292, 236, 242, 284, 268, 340, 300, 404, 336, 180, 276, 225, 306, 279, 343, 341, 386],dtype='float32').reshape(-1,1,2)
+        corners2 = np.array([197, 188, 280, 187, 361, 186, 440, 185, 194, 247, 284, 245, 374, 243, 460, 241, 191, 320, 292, 318, 388, 314, 482, 308],dtype='float32').reshape(-1,1,2)
         corners12 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
         corners22 = cv2.cornerSubPix(gray2,corners2,(11,11),(-1,-1),criteria)
         imgpoints.append(corners12)
@@ -528,9 +556,25 @@ def main():
     #img2 = cv2.drawChessboardCorners(img2, (yoko,tate), corners22,ret2)
     #cv2.imshow('drawChessboardCorners',img)
     cv2.waitKey(500)
+    """
+    ret, mtx, dist, _, _ = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None,flags=cv2.CALIB_RATIONAL_MODEL) # _, _ は，rvecs, tvecs
+    ret2, mtx2, dist2, _, _ = cv2.calibrateCamera(objpoints, imgpoints2, gray2.shape[::-1],None,None,flags=cv2.CALIB_RATIONAL_MODEL)
+    """
+    mtx = np.array([590, 0, frame1.shape[1]/2, 0, 590, frame1.shape[0]/2, 0, 0, 1]).reshape(3,3)
+    mtx2 = np.array([590, 0, frame2.shape[1]/2, 0, 590, frame2.shape[0]/2, 0, 0, 1]).reshape(3,3)
 
-    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None,flags=cv2.CALIB_RATIONAL_MODEL)
-    ret2, mtx2, dist2, rvecs2, tvecs2 = cv2.calibrateCamera(objpoints, imgpoints2, gray2.shape[::-1],None,None,flags=cv2.CALIB_RATIONAL_MODEL)
+    #print(f'dist: {dist}')
+    #print(f'dist2: {dist2}')
+    dist = np.array([-0.55376925, 1.99642305, 0.00695332, -0.02167939, 2.74771938, 0.54082278, 0.04485288, 4.88112929, 0, 0, 0, 0, 0, 0]).reshape(1,-1)
+    dist2 = np.array([-0.55376925, 1.99642305, 0.00695332, -0.02167939, 2.74771938, 0.54082278, 0.04485288, 4.88112929, 0, 0, 0, 0, 0, 0]).reshape(1,-1)
+
+    _, rvecs, tvecs, _ = cv2.solvePnPRansac(objp, corners12, mtx, dist)
+    _, rvecs2, tvecs2, _ = cv2.solvePnPRansac(objp, corners22, mtx2, dist2)
+    rvecs = [rvecs]
+    tvecs = [tvecs]
+    rvecs2 = [rvecs2]
+    tvecs2 = [tvecs2]
+
     """
     ret：
     mtx：camera matrix，カメラ行列(内部パラメータ)
@@ -545,13 +589,29 @@ def main():
     imgpts2, _ = cv2.projectPoints(axis, rvecs2[-1], tvecs2[-1], mtx2, dist2)
     
     es = Estimation(mtx, dist, rvecs, tvecs, mtx2, dist2, rvecs2, tvecs2, frame2, imgpoints, imgpoints2, tate, yoko)
-    stdarray, stdarray2 = es.stdprojection()
-    print(stdarray)
+    netarray_0, netarray2_0 = es.stdprojection(0)
+    netarray_1, netarray2_1 = es.stdprojection(-1)
+    netarray_2, netarray2_2 = es.stdprojection(-2)
+    stdpts1 = corners12.reshape(-1,2)
+    stdpts2 = corners22.reshape(-1,2)
+    sphnetarray_0 = []
+    sphnetarray2_0 = []
+    for i in stdpts1:
+        sphnetarray_0.append(es.undist_pts(i,1))
+    for i in stdpts2:
+        sphnetarray2_0.append(es.undist_pts(i,2))
 
-    frame1s = drawpoints(frame1, stdarray)
-    frame2s = drawpoints(frame2, stdarray2)
-    cv2.imshow('frame1s', frame1s)
-    cv2.imshow('frame2s', frame2s)
+    net1 = drawpoints(frame1, netarray_0,255,0,100)
+    net2 = drawpoints(frame2, netarray2_0,255,0,100)
+    #net1 = drawpoints(frame1, netarray_1,100,255,0)
+    #net2 = drawpoints(frame2, netarray2_1,100,255,0)
+    #net1 = drawpoints(frame1, netarray_2,0,100,255)
+    #net2 = drawpoints(frame2, netarray2_2,0,100,255)
+    net1 = drawpoints(frame1, sphnetarray_0,255,100,255)
+    net2 = drawpoints(frame2, sphnetarray2_0,255,100,255)
+
+    cv2.imshow('net1', net1)
+    cv2.imshow('net2', net2)
 
 
     cv2.setMouseCallback('camera1', es.onMouse)         # 1カメの画像に対するクリックイベント
