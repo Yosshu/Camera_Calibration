@@ -204,17 +204,12 @@ class Estimation:
 
 
     def line_SEpoint(self, x, y, num):      # 始点（カメラ）と終点（正規化画像座標）のワールド座標を求める関数，numは1カメか2カメか
+        obj_i = [x,y]
         if num == 1:
-            """
-            undist_i1 = cv2.undistortPoints(np.float32([x,y]), self.mtx, self.dist, None, self.newcameramtx)
-            obj_n1x = undist_i1[0][0][0]                                            # 対象物の1カメ画像座標
-            obj_n1y = undist_i1[0][0][1]
-            """
-            obj_i1x = x                                                             # 対象物の1カメ画像座標
-            obj_i1y = y
+            obj_sphi1 = self.undist_pts(np.array([obj_i],dtype='float32'),1)
 
-            obj_n1x = (obj_i1x - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
-            obj_n1y = (obj_i1y - self.mtx[1][2]) / self.mtx[1][1]
+            obj_n1x = (obj_sphi1[0] - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
+            obj_n1y = (obj_sphi1[1] - self.mtx[1][2]) / self.mtx[1][1]
             
             obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
             obj1_w = (np.linalg.inv(self.R)) @ (np.array(obj_n1) - np.array(self.tvecs))
@@ -226,16 +221,11 @@ class Estimation:
             return camera1_w, obj1_w
 
         elif num == 2:
-            """
-            undist_i2 = cv2.undistortPoints(np.float32([x,y]), self.mtx2, self.dist2, None, self.newcameramtx2)
-            obj_n2x = undist_i2[0][0][0]                                            # 対象物の2カメ画像座標
-            obj_n2y = undist_i2[0][0][1]
-            """
-            obj_i2x = x                                                             # 対象物の1カメ画像座標
-            obj_i2y = y
+            
+            obj_sphi2 = self.undist_pts(np.array([obj_i],dtype='float32'),2)
 
-            obj_n2x = (obj_i2x - self.mtx2[0][2]) / self.mtx2[0][0]                 # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
-            obj_n2y = (obj_i2y - self.mtx2[1][2]) / self.mtx2[1][1]
+            obj_n2x = (obj_sphi2[0] - self.mtx2[0][2]) / self.mtx2[0][0]                 # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
+            obj_n2y = (obj_sphi2[1] - self.mtx2[1][2]) / self.mtx2[1][1]
             
             obj_n2 = [[obj_n2x], [obj_n2y], [1]]                                    # 対象物の2カメ正規化画像座標系を2カメカメラ座標系に変換
             #obj1_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
@@ -563,8 +553,6 @@ def main():
     mtx = np.array([590, 0, frame1.shape[1]/2, 0, 590, frame1.shape[0]/2, 0, 0, 1]).reshape(3,3)
     mtx2 = np.array([590, 0, frame2.shape[1]/2, 0, 590, frame2.shape[0]/2, 0, 0, 1]).reshape(3,3)
 
-    #print(f'dist: {dist}')
-    #print(f'dist2: {dist2}')
     dist = np.array([-0.55376925, 1.99642305, 0.00695332, -0.02167939, 2.74771938, 0.54082278, 0.04485288, 4.88112929, 0, 0, 0, 0, 0, 0]).reshape(1,-1)
     dist2 = np.array([-0.55376925, 1.99642305, 0.00695332, -0.02167939, 2.74771938, 0.54082278, 0.04485288, 4.88112929, 0, 0, 0, 0, 0, 0]).reshape(1,-1)
 
@@ -597,16 +585,16 @@ def main():
     sphnetarray_0 = []
     sphnetarray2_0 = []
     for i in stdpts1:
-        sphnetarray_0.append(es.undist_pts(i,1))
+        sphnetarray_0.append(es.undist_pts(np.array([i],dtype='float32'),1))
     for i in stdpts2:
-        sphnetarray2_0.append(es.undist_pts(i,2))
+        sphnetarray2_0.append(es.undist_pts(np.array([i],dtype='float32'),2))
 
     net1 = drawpoints(frame1, netarray_0,255,0,100)
     net2 = drawpoints(frame2, netarray2_0,255,0,100)
-    #net1 = drawpoints(frame1, netarray_1,100,255,0)
-    #net2 = drawpoints(frame2, netarray2_1,100,255,0)
-    #net1 = drawpoints(frame1, netarray_2,0,100,255)
-    #net2 = drawpoints(frame2, netarray2_2,0,100,255)
+    net1 = drawpoints(frame1, netarray_1,100,255,0)
+    net2 = drawpoints(frame2, netarray2_1,100,255,0)
+    net1 = drawpoints(frame1, netarray_2,0,100,255)
+    net2 = drawpoints(frame2, netarray2_2,0,100,255)
     net1 = drawpoints(frame1, sphnetarray_0,255,100,255)
     net2 = drawpoints(frame2, sphnetarray2_0,255,100,255)
 
