@@ -176,14 +176,17 @@ class Estimation:
 
 
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
-        if event == cv2.EVENT_LBUTTONDOWN:                                              # 1カメ画像を左クリックしたら，
+        if event == cv2.EVENT_RBUTTONDOWN:                                              # 1カメ画像を左クリックしたら，
             self.obj1_i1x = x
             self.obj1_i1y = y
             self.camera1_w, self.obj1_w = self.line_SEpoint(x,y,1)                      # 1カメのワールド座標，1カメ画像でクリックされた点のワールド座標（この2点を通る直線のどこかにクリックしたものが存在することになる）
             self.click_count = 1                                                        # 1カメの画像をクリックしたことを伝える
 
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.pointZ0(x,y,1)
+
     def onMouse2(self, event, x, y, flags, params):                                     # 2カメの画像に対するクリックイベント
-        if event == cv2.EVENT_LBUTTONDOWN and self.click_count >= 1:                    # 1カメ画像が既にクリックされていて，2カメ画像をクリックしたら，
+        if event == cv2.EVENT_RBUTTONDOWN and self.click_count >= 1:                    # 1カメ画像が既にクリックされていて，2カメ画像をクリックしたら，
             self.obj2_i2x = x                                                           # 2カメの画像座標
             self.obj2_i2y = y
             self.camera2_w, self.obj2_w = self.line_SEpoint(x,y,2)                      # 2カメのワールド座標，2カメ画像でクリックされた点のワールド座標
@@ -201,6 +204,9 @@ class Estimation:
             result[2] = round(result[2], 4)
             print(f'{result}\n')                                                        # 最終結果であるワールド座標を出力
             self.click_count = 2                                                        #  1カメ画像をクリックした後，2カメの画像をクリックしたことを伝える
+
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.pointZ0(x,y,2)
 
 
     def line_SEpoint(self, x, y, num):      # 始点（カメラ）と終点（正規化画像座標）のワールド座標を求める関数，numは1カメか2カメか
@@ -221,7 +227,6 @@ class Estimation:
             return camera1_w, obj1_w
 
         elif num == 2:
-            
             obj_sphi2 = self.undist_pts(np.array([obj_i],dtype='float32'),2)
 
             obj_n2x = (obj_sphi2[0] - self.mtx2[0][2]) / self.mtx2[0][0]                 # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
@@ -410,6 +415,52 @@ class Estimation:
             pts_uv = [pts_uv[0],pts_uv[1]]
         return pts_uv
 
+    def pointZ0(self,x,y,num):
+        floor_wz = 0
+        obj_i = [x,y]
+        floor_wz = -floor_wz
+        if num == 1:
+            obj_sphi1 = self.undist_pts(np.array([obj_i],dtype='float32'),1)
+
+            obj_n1x = (obj_sphi1[0] - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
+            obj_n1y = (obj_sphi1[1] - self.mtx[1][2]) / self.mtx[1][1]
+            
+            obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
+            obj1_w = (np.linalg.inv(self.R)) @ (np.array(obj_n1) - np.array(self.tvecs))
+            #obj1_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                        # obj_n1を世界座標系に変換              Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+            
+            camera1_w = (np.linalg.inv(self.R)) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))     # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+            #camera1_w = (self.R.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))             # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+            
+            slopexz_w = (camera1_w[0][2][0] - obj1_w[0][2][0])/(camera1_w[0][0][0] - obj1_w[0][0][0])
+            floor_wx = ((floor_wz - camera1_w[0][2][0])/slopexz_w) + camera1_w[0][0][0]
+            slopeyz_w = (camera1_w[0][2][0] - obj1_w[0][2][0])/(camera1_w[0][1][0] - obj1_w[0][1][0])
+            floor_wy = ((floor_wz - camera1_w[0][2][0])/slopeyz_w) + camera1_w[0][1][0]
+            floor_wx = round(floor_wx, 4)
+            floor_wy = round(floor_wy, 4)
+            print([floor_wx,floor_wy,-floor_wz])
+
+        elif num == 2:
+            obj_sphi2 = self.undist_pts(np.array([obj_i],dtype='float32'),2)
+
+            obj_n2x = (obj_sphi2[0] - self.mtx2[0][2]) / self.mtx2[0][0]                 # 対象物の2カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
+            obj_n2y = (obj_sphi2[1] - self.mtx2[1][2]) / self.mtx2[1][1]
+            
+            obj_n2 = [[obj_n2x], [obj_n2y], [1]]                                    # 対象物の2カメ正規化画像座標系を2カメカメラ座標系に変換
+            #obj1_w = (np.linalg.inv(R)) @ (np.array(obj_n1) - np.array(tvecs))
+            obj2_w = (self.R2.T) @ (np.array(obj_n2) - np.array(self.tvecs2))                       # obj_n2を世界座標系に変換              Ｗ = Ｒ2^T (Ｃ2 - ｔ2)
+            
+            camera2_w = (np.linalg.inv(self.R2)) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs2))        # 2カメのワールド座標        Ｗ = Ｒ2^T (Ｃ2 - ｔ2)
+            #camera2_w = (self.R2.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs2))           # 2カメのワールド座標        Ｗ = Ｒ2^T (Ｃ2 - ｔ2)
+            slopexz_w = (camera2_w[0][2][0] - obj2_w[0][2][0])/(camera2_w[0][0][0] - obj2_w[0][0][0])
+            floor_wx = ((floor_wz - camera2_w[0][2][0])/slopexz_w) + camera2_w[0][0][0]
+            slopeyz_w = (camera2_w[0][2][0] - obj2_w[0][2][0])/(camera2_w[0][1][0] - obj2_w[0][1][0])
+            floor_wy = ((floor_wz - camera2_w[0][2][0])/slopeyz_w) + camera2_w[0][1][0]
+            floor_wx = round(floor_wx, 4)
+            floor_wy = round(floor_wy, 4)
+            print([floor_wx,floor_wy,-floor_wz])
+
+
 
 def main():
     # 検出するチェッカーボードの交点の数
@@ -428,7 +479,7 @@ def main():
     imgpoints2 = [] # 2d points in image plane.
 
     # 軸の定義
-    axis = np.float32([[2,0,0], [0,2,0], [0,0,-2]]).reshape(-1,3)
+    axis = np.float32([[5,0,0], [0,5,0], [0,0,-5]]).reshape(-1,3)
 
     val = None
     while True:
@@ -555,7 +606,6 @@ def main():
 
     dist = np.array([-0.55376925, 1.99642305, 0.00695332, -0.02167939, 2.74771938, 0.54082278, 0.04485288, 4.88112929, 0, 0, 0, 0, 0, 0]).reshape(1,-1)
     dist2 = np.array([-0.55376925, 1.99642305, 0.00695332, -0.02167939, 2.74771938, 0.54082278, 0.04485288, 4.88112929, 0, 0, 0, 0, 0, 0]).reshape(1,-1)
-
     _, rvecs, tvecs, _ = cv2.solvePnPRansac(objp, corners12, mtx, dist)
     _, rvecs2, tvecs2, _ = cv2.solvePnPRansac(objp, corners22, mtx2, dist2)
     rvecs = [rvecs]
@@ -591,15 +641,15 @@ def main():
 
     net1 = drawpoints(frame1, netarray_0,255,0,100)
     net2 = drawpoints(frame2, netarray2_0,255,0,100)
-    net1 = drawpoints(frame1, netarray_1,100,255,0)
-    net2 = drawpoints(frame2, netarray2_1,100,255,0)
-    net1 = drawpoints(frame1, netarray_2,0,100,255)
-    net2 = drawpoints(frame2, netarray2_2,0,100,255)
+    #net1 = drawpoints(frame1, netarray_1,100,255,0)
+    #net2 = drawpoints(frame2, netarray2_1,100,255,0)
+    #net1 = drawpoints(frame1, netarray_2,0,100,255)
+    #net2 = drawpoints(frame2, netarray2_2,0,100,255)
     net1 = drawpoints(frame1, sphnetarray_0,255,100,255)
     net2 = drawpoints(frame2, sphnetarray2_0,255,100,255)
 
-    cv2.imshow('net1', net1)
-    cv2.imshow('net2', net2)
+    #cv2.imshow('net1', net1)
+    #cv2.imshow('net2', net2)
 
 
     cv2.setMouseCallback('camera1', es.onMouse)         # 1カメの画像に対するクリックイベント
