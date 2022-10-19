@@ -183,7 +183,7 @@ class Estimation:
             self.click_count = 1                                                        # 1カメの画像をクリックしたことを伝える
 
         if event == cv2.EVENT_LBUTTONDOWN:
-            self.pointZ0(x,y,1)
+            self.pointFixZ(x,y,1)
 
     def onMouse2(self, event, x, y, flags, params):                                     # 2カメの画像に対するクリックイベント
         if event == cv2.EVENT_RBUTTONDOWN and self.click_count >= 1:                    # 1カメ画像が既にクリックされていて，2カメ画像をクリックしたら，
@@ -206,7 +206,7 @@ class Estimation:
             self.click_count = 2                                                        #  1カメ画像をクリックした後，2カメの画像をクリックしたことを伝える
 
         if event == cv2.EVENT_LBUTTONDOWN:
-            self.pointZ0(x,y,2)
+            self.pointFixZ(x,y,2)
 
 
     def line_SEpoint(self, x, y, num):      # 始点（カメラ）と終点（正規化画像座標）のワールド座標を求める関数，numは1カメか2カメか
@@ -415,9 +415,9 @@ class Estimation:
             pts_uv = [pts_uv[0],pts_uv[1]]
         return pts_uv
 
-    def pointZ0(self,x,y,num):
+    def pointFixZ(self,ix,iy,num):
         floor_wz = 0
-        obj_i = [x,y]
+        obj_i = [ix,iy]
         floor_wz = -floor_wz
         if num == 1:
             obj_sphi1 = self.undist_pts(np.array([obj_i],dtype='float32'),1)
@@ -479,7 +479,7 @@ def main():
     imgpoints2 = [] # 2d points in image plane.
 
     # 軸の定義
-    axis = np.float32([[5,0,0], [0,5,0], [0,0,-5]]).reshape(-1,3)
+    axis = np.float32([[2,0,0], [0,2,0], [0,0,-2]]).reshape(-1,3)
 
     val = None
     while True:
