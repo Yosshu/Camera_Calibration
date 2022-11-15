@@ -26,9 +26,9 @@ def axes_check(img, tate, yoko, objp, criteria, axis):      # Z軸が正しく�
         cv2.waitKey(500)
         ret, mtx0, dist0, rvecs0, tvecs0 = cv2.calibrateCamera(objpoints0, imgpoints0, gray0.shape[::-1],None,None)
         # Find the rotation and translation vectors.
-        rvecs0, tvecs0, _ = cv2.solvePnPRansac(objp, corners02, mtx0, dist0)
+        _, rvecs0, tvecs0, _ = cv2.solvePnPRansac(objp, corners02, mtx0, dist0)
 
-        imgpts0, _ = cv2.projectPoints(axis, rvecs0[-1], tvecs0[-1], mtx0, dist0)
+        imgpts0, _ = cv2.projectPoints(axis, rvecs0, tvecs0, mtx0, dist0)
         return ret0, corners02, imgpts0
     return ret0, None, None
 
@@ -39,7 +39,7 @@ def drawpoints(img, points,b,g,r):
     return img
 
 class Estimation:
-    def __init__(self, mtx, dist, rvecs, tvecs, img_axes2, imgpoints, tate, yoko):
+    def __init__(self, mtx, dist, rvecs, tvecs, img, imgpoints, tate, yoko):
         self.mtx = mtx                  # 1カメの内部パラメータ
         self.dist = dist                # 1カメの歪み係数
         self.rvecs = rvecs              # 1カメの回転ベクトル
@@ -66,7 +66,7 @@ class Estimation:
         """
 
         """
-        h,  w = img_axes2.shape[:2]
+        h,  w = img.shape[:2]
         self.newcameramtx, self.roi = cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
         self.newcameramtx2, self.roi2 = cv2.getOptimalNewCameraMatrix(mtx2,dist2,(w,h),1,(w,h))
         """
@@ -84,7 +84,7 @@ class Estimation:
         # クラス内の関数間で共有したい変数
         self.obj1_i1x = 0               # 1カメでクリックした点の1カメ画像座標
         self.obj1_i1y = 0
-        self.img_axes2 = img_axes2      # 軸だけ描画された1カメの画像
+        self.img = img      # 軸だけ描画された1カメの画像
         self.pn = [1, 1, 1]             # 1 or -1，ワールド座標がプラスかマイナスか，出力する直前にかける [X軸座標, Y軸座標, Z軸座標]
         self.origin = []
 
@@ -204,8 +204,8 @@ class Estimation:
 
 def main():
     # 検出するチェッカーボードの交点の数
-    tate = 3
-    yoko = 4
+    tate = 4
+    yoko = 5
     # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -255,6 +255,8 @@ def main():
                 if ret == True:
                     print("OK")
                     break
+                elif ret == False:
+                    print("Fail")
             elif key == ord('a'):
                 ret01, corners02, imgpts0 = axes_check(frame1, tate, yoko, objp, criteria, axis)
             elif key == 27:   #Escで終了
