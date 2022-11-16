@@ -130,7 +130,8 @@ class Estimation:
         # 回転ベクトルを3×1から3×3に変換
         self.R, _ = cv2.Rodrigues(np.array(self.rvecs))     # 1カメの回転行列
 
-        self.click_count = 0            # 1カメの画像をクリックしたか
+        self.Lclick_count = 0            # 左クリックしたか
+        self.Rclick_count = 0            # 右クリックしたか
 
         # クラス内の関数間で共有したい変数
         self.obj1_i1x = 0               # 1カメでクリックした点の1カメ画像座標
@@ -143,11 +144,18 @@ class Estimation:
         self.obj1_w = []                # 1カメでクリックした点のワールド座標
 
 
+        self.target = []
+
+
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
         if event == cv2.EVENT_LBUTTONDOWN:
+            self.target = [x,y]
+            self.Lclick_count = 1
+        elif event == cv2.EVENT_RBUTTONDOWN:
             self.pointFixZ(x,y,1)
             self.obj1_i1x = x
             self.obj1_i1y = y
+            self.Rclick_count = 1
 
     def line_SEpoint(self, x, y, num):      # 始点（カメラ）と終点（正規化画像座標）のワールド座標を求める関数，numは1カメか2カメか
         obj_i = [x,y]
@@ -201,8 +209,11 @@ class Estimation:
         return None, None
 
 
-    def line_update(self, img):        # エピポーラ線やクリックした点を描画する関数                                                                                 # 1カメ画像をクリックしていたら，
-        img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 4, (0, 165, 255), thickness=-1)          # クリックした点を描画
+    def line_update(self, img):        # エピポーラ線やクリックした点を描画する関数
+        if self.Lclick_count == 1:
+            img = cv2.circle(img, (int(self.target[0]),int(self.target[1])), 4, (0, 165, 255), thickness=-1)          # 左クリックした点を描画
+        if self.Rclick_count == 1:
+            img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 4, (255,0,255), thickness=-1)          # 右クリックした点を描画
         return img
 
 
@@ -237,6 +248,13 @@ class Estimation:
             floor_wx = round(floor_wx, 4)
             floor_wy = round(floor_wy, 4)
             print([floor_wx,floor_wy,-floor_wz])
+
+
+    def getTarget(self):
+        ret = False
+        if self.Lclick_count == 1:
+            ret = True
+        return ret, self.target
 
 def main():
     # 検出するチェッカーボードの交点の数
@@ -365,12 +383,16 @@ def main():
             img_axes = es.line_update(img_axes)
             cv2.imshow('camera1', img_axes)      #カメラの画像の出力
 
-            ret1,red= findSquare(frame1,50,54,151)
-            ret2,green = findSquare(frame1,122,131,31)
-            if ret1 and ret2:
+            ret1,red= findSquare(frame1,13,22,116)
+            ret2,green = findSquare(frame1,42,42,3)
+            ret3,target_i = es.getTarget()
+            if ret1 and ret2 and ret3:
                 robot_vector = np.array(red - green)
-                std_vector = np.array([0,-1])
-                angle = tangent_angle(robot_vector,std_vector)
+                robot_ix = abs(red[0]-green[0])
+                robot_iy = abs(red[1]-green[1])
+                robot_i = np.array([robot_ix,robot_iy])
+                target_vector = np.array(target_i - robot_i)
+                angle = tangent_angle(robot_vector,target_vector)
                 print(angle)
         
         #繰り返し分から抜けるためのif文
