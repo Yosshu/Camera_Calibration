@@ -1,10 +1,11 @@
-from re import X
 import numpy as np
 import cv2
 import glob
 import pyautogui
 import copy
 import math
+import colorsys
+from numpy import linalg as LA
 
 
 def draw(img, corners, imgpts):         # 座標軸を描画する関数
@@ -37,6 +38,56 @@ def drawpoints(img, points,b,g,r):
         if 0<=i[0]<img.shape[1] and 0<=i[1]<img.shape[0]:
             img = cv2.circle(img, (int(i[0]),int(i[1])), 2, (b, g, r), thickness=-1)
     return img
+
+
+def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心の画像座標を取得する関数
+    hsv = colorsys.rgb_to_hsv(r/255, g/255, b/255)
+    h = int(hsv[0]*180)
+    s = int(hsv[1]*255)
+    v = int(hsv[2]*255)
+    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    
+    lower_color = np.array([h-15, s-40, v-100]) 
+    upper_color = np.array([h+15, s+40, v+100]) 
+
+    mask = cv2.inRange(img_hsv, lower_color, upper_color) 
+    img_mask = cv2.bitwise_and(img, img, mask = mask)
+    img_mask_gray = cv2.cvtColor(img_mask, cv2.COLOR_BGR2GRAY)
+    _, img_mask_bin = cv2.threshold(img_mask_gray, 0, 255, cv2.THRESH_BINARY)
+
+    contours = cv2.findContours(img_mask_bin, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[0]
+
+    # 面積が一定以上の輪郭のみ残す。
+    area_thresh = 10000
+    contours = list(filter(lambda x: cv2.contourArea(x) > area_thresh, contours))
+    ret = False
+    center = 0
+    # 輪郭を矩形で囲む。
+    for cnt in contours:
+        # 輪郭に外接する長方形を取得する。
+        x, y, width, height = cv2.boundingRect(cnt)
+        center = [x+(width/2),y+(height/2)]
+        # 描画する。
+        #cv2.rectangle(img, (x, y), (x + width, y + height), color=(0, 255, 0), thickness=2)
+        #cv2.imshow('img',img)
+        ret = True
+    center = np.array(center)
+    return ret,center
+
+
+def tangent_angle(u: np.ndarray, v: np.ndarray):        # 2つのベクトルのなす角を求める関数
+    i = np.inner(u, v)
+    n = LA.norm(u) * LA.norm(v)
+    c = i / n
+
+    output = np.rad2deg(np.arccos(np.clip(c, -1.0, 1.0)))
+
+    w = np.cross(u, v)
+    if w < 0:
+        output = -output
+
+    return output
+
 
 class Estimation:
     def __init__(self, mtx, dist, rvecs, tvecs, img, imgpoints, tate, yoko):
@@ -95,6 +146,8 @@ class Estimation:
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
         if event == cv2.EVENT_LBUTTONDOWN:
             self.pointFixZ(x,y,1)
+            self.obj1_i1x = x
+            self.obj1_i1y = y
 
     def line_SEpoint(self, x, y, num):      # 始点（カメラ）と終点（正規化画像座標）のワールド座標を求める関数，numは1カメか2カメか
         obj_i = [x,y]
@@ -148,26 +201,9 @@ class Estimation:
         return None, None
 
 
-    def line_update(self, img, num):        # エピポーラ線やクリックした点を描画する関数
-        if num == 2:                                                                                                    # 2カメ画像に対しての処理の場合
-            if self.click_count >= 1:                                                                                   # 1カメ画像をクリックしていたら，
-                startpoint_i2y, endpoint_i2y = self.epipo(self.camera1_w, self.obj1_w, 1)                               # エピポーラ線を求める
-                img = cv2.line(img, (0, int(startpoint_i2y)), (img.shape[1], int(endpoint_i2y)), (0,255,255), 2)        # エピポーラ線を描画
-                if self.click_count == 2:                                                                               # 2カメ画像をクリックしていたら，
-                    img = cv2.circle(img, (int(self.obj2_i2x),int(self.obj2_i2y)), 4, (0, 165, 255), thickness=-1)      # クリックした点を描画
-            #img = cv2.undistort(img, self.mtx2, self.dist2, None, self.newcameramtx2)
-            return img
-
-        elif num == 1:                                                                                                  # 1カメ画像に対しての処理の場合
-            if self.click_count >= 1:                                                                                   # 1カメ画像をクリックしていたら，
-                img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 4, (0, 165, 255), thickness=-1)          # クリックした点を描画
-                if self.click_count == 2:                                                                               # 2カメ画像をクリックしていたら，
-                    startpoint_i1y, endpoint_i1y = self.epipo(self.camera2_w, self.obj2_w, 2)                           # エピポーラ線を求める
-                    img = cv2.line(img, (0, int(startpoint_i1y)), (img.shape[1], int(endpoint_i1y)), (0,255,255), 2)    # エピポーラ線を描画
-            #img = cv2.undistort(img, self.mtx, self.dist, None, self.newcameramtx)
-            return img
-
-        return None
+    def line_update(self, img):        # エピポーラ線やクリックした点を描画する関数                                                                                 # 1カメ画像をクリックしていたら，
+        img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 4, (0, 165, 255), thickness=-1)          # クリックした点を描画
+        return img
 
 
     def undist_pts(self, pts_uv, num):
@@ -324,9 +360,18 @@ def main():
     
     while True:
         ret, frame1 = cap1.read()           #カメラからの画像取得
-        img_axes = draw(frame1,corners12,imgpts)
-        img_axes = es.line_update(img_axes,1)
-        cv2.imshow('camera1', img_axes)      #カメラの画像の出力
+        if ret:
+            img_axes = draw(frame1,corners12,imgpts)
+            img_axes = es.line_update(img_axes)
+            cv2.imshow('camera1', img_axes)      #カメラの画像の出力
+
+            ret1,red= findSquare(frame1,50,54,151)
+            ret2,green = findSquare(frame1,122,131,31)
+            if ret1 and ret2:
+                robot_vector = np.array(red - green)
+                std_vector = np.array([0,-1])
+                angle = tangent_angle(robot_vector,std_vector)
+                print(angle)
         
         #繰り返し分から抜けるためのif文
         key =cv2.waitKey(1)
