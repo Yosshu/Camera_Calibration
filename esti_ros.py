@@ -54,11 +54,12 @@ def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心�
     img_mask = cv2.bitwise_and(img, img, mask = mask)
     img_mask_gray = cv2.cvtColor(img_mask, cv2.COLOR_BGR2GRAY)
     _, img_mask_bin = cv2.threshold(img_mask_gray, 0, 255, cv2.THRESH_BINARY)
+    #cv2.imshow('img_bin',img_mask_bin)
 
     contours = cv2.findContours(img_mask_bin, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[0]
 
     # 面積が一定以上の輪郭のみ残す。
-    area_thresh = 10000
+    area_thresh = 500
     contours = list(filter(lambda x: cv2.contourArea(x) > area_thresh, contours))
     ret = False
     center = 0
@@ -68,8 +69,8 @@ def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心�
         x, y, width, height = cv2.boundingRect(cnt)
         center = [x+(width/2),y+(height/2)]
         # 描画する。
-        #cv2.rectangle(img, (x, y), (x + width, y + height), color=(0, 255, 0), thickness=2)
-        #cv2.imshow('img',img)
+        cv2.rectangle(img, (x, y), (x + width, y + height), color=(0, 255, 0), thickness=2)
+        cv2.imshow('img_square',img)
         ret = True
     center = np.array(center)
     return ret,center
@@ -258,8 +259,8 @@ class Estimation:
 
 def main():
     # 検出するチェッカーボードの交点の数
-    tate = 4
-    yoko = 5
+    tate = 3
+    yoko = 4
     # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -383,13 +384,14 @@ def main():
             img_axes = es.line_update(img_axes)
             cv2.imshow('camera1', img_axes)      #カメラの画像の出力
 
-            ret1,red= findSquare(frame1,13,22,116)
-            ret2,green = findSquare(frame1,42,42,3)
+            ret1,red= findSquare(frame1,70,74,255)
+            ret2,green = findSquare(frame1,137,146,31)
+            #ret1 = False
             ret3,target_i = es.getTarget()
             if ret1 and ret2 and ret3:
                 robot_vector = np.array(red - green)
-                robot_ix = abs(red[0]-green[0])
-                robot_iy = abs(red[1]-green[1])
+                robot_ix = (red[0]+green[0])/2
+                robot_iy = (red[1]+green[1])/2
                 robot_i = np.array([robot_ix,robot_iy])
                 target_vector = np.array(target_i - robot_i)
                 angle = tangent_angle(robot_vector,target_vector)
