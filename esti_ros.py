@@ -59,7 +59,7 @@ def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心�
     contours = cv2.findContours(img_mask_bin, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[0]
 
     # 面積が一定以上の輪郭のみ残す。
-    area_thresh = 500
+    area_thresh = 400
     contours = list(filter(lambda x: cv2.contourArea(x) > area_thresh, contours))
     ret = False
     center = 0
@@ -145,15 +145,17 @@ class Estimation:
         self.obj1_w = []                # 1カメでクリックした点のワールド座標
 
 
-        self.target = []
+        self.target_i = []
+        self.target_w = []
 
 
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
         if event == cv2.EVENT_LBUTTONDOWN:
-            self.target = [x,y]
+            self.target_i = [x,y]
+            self.target_w = self.pointFixZ(x,y,0.5)
             self.Lclick_count = 1
         elif event == cv2.EVENT_RBUTTONDOWN:
-            self.pointFixZ(x,y,1)
+            print(self.pointFixZ(x,y,0))
             self.obj1_i1x = x
             self.obj1_i1y = y
             self.Rclick_count = 1
@@ -212,7 +214,7 @@ class Estimation:
 
     def line_update(self, img):        # エピポーラ線やクリックした点を描画する関数
         if self.Lclick_count == 1:
-            img = cv2.circle(img, (int(self.target[0]),int(self.target[1])), 4, (0, 165, 255), thickness=-1)          # 左クリックした点を描画
+            img = cv2.circle(img, (int(self.target_i[0]),int(self.target_i[1])), 4, (0, 165, 255), thickness=-1)          # 左クリックした点を描画
         if self.Rclick_count == 1:
             img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 4, (255,0,255), thickness=-1)          # 右クリックした点を描画
         return img
@@ -225,37 +227,61 @@ class Estimation:
             pts_uv = [pts_uv[0],pts_uv[1]]
         return pts_uv
 
-    def pointFixZ(self,ix,iy,num):
-        floor_wz = 0
+    def pointFixZ(self,ix,iy,iz):
+        #floor_wz = 0
         obj_i = [ix,iy]
-        floor_wz = -floor_wz
-        if num == 1:
-            obj_sphi1 = self.undist_pts(np.array([obj_i],dtype='float32'),1)
+        floor_wz = -iz
 
-            obj_n1x = (obj_sphi1[0] - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
-            obj_n1y = (obj_sphi1[1] - self.mtx[1][2]) / self.mtx[1][1]
-            
-            obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
-            obj1_w = (np.linalg.inv(self.R)) @ (np.array(obj_n1) - np.array(self.tvecs))
-            #obj1_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                        # obj_n1を世界座標系に変換              Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
-            
-            camera1_w = (np.linalg.inv(self.R)) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))     # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
-            #camera1_w = (self.R.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))             # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
-            
-            slopexz_w = (camera1_w[0][2][0] - obj1_w[0][2][0])/(camera1_w[0][0][0] - obj1_w[0][0][0])
-            floor_wx = ((floor_wz - camera1_w[0][2][0])/slopexz_w) + camera1_w[0][0][0]
-            slopeyz_w = (camera1_w[0][2][0] - obj1_w[0][2][0])/(camera1_w[0][1][0] - obj1_w[0][1][0])
-            floor_wy = ((floor_wz - camera1_w[0][2][0])/slopeyz_w) + camera1_w[0][1][0]
-            floor_wx = round(floor_wx, 4)
-            floor_wy = round(floor_wy, 4)
-            print([floor_wx,floor_wy,-floor_wz])
+        obj_sphi1 = self.undist_pts(np.array([obj_i],dtype='float32'),1)
 
+        obj_n1x = (obj_sphi1[0] - self.mtx[0][2]) / self.mtx[0][0]                   # 対象物の1カメ正規化座標　原点を真ん中にしてから，焦点距離で割る
+        obj_n1y = (obj_sphi1[1] - self.mtx[1][2]) / self.mtx[1][1]
+        
+        obj_n1 = [[obj_n1x], [obj_n1y], [1]]                                    # 対象物の1カメ正規化画像座標系を1カメカメラ座標系に変換
+        obj1_w = (np.linalg.inv(self.R)) @ (np.array(obj_n1) - np.array(self.tvecs))
+        #obj1_w = (self.R.T) @ (np.array(obj_n1) - np.array(self.tvecs))                        # obj_n1を世界座標系に変換              Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+        
+        camera1_w = (np.linalg.inv(self.R)) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))     # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+        #camera1_w = (self.R.T) @ (np.array([[0], [0], [0]]) - np.array(self.tvecs))             # 1カメのワールド座標        Ｗ = Ｒ1^T (Ｃ1 - ｔ1)
+        
+        slopexz_w = (camera1_w[0][2][0] - obj1_w[0][2][0])/(camera1_w[0][0][0] - obj1_w[0][0][0])
+        floor_wx = ((floor_wz - camera1_w[0][2][0])/slopexz_w) + camera1_w[0][0][0]
+        slopeyz_w = (camera1_w[0][2][0] - obj1_w[0][2][0])/(camera1_w[0][1][0] - obj1_w[0][1][0])
+        floor_wy = ((floor_wz - camera1_w[0][2][0])/slopeyz_w) + camera1_w[0][1][0]
+        floor_wx = round(floor_wx, 4)
+        floor_wy = round(floor_wy, 4)
 
+        #scale = 50      # 1マス50cm
+        return [floor_wx,floor_wy,-floor_wz]
+
+    """
     def getTarget(self):
         ret = False
         if self.Lclick_count == 1:
             ret = True
-        return ret, self.target
+        return ret, self.target_i
+    """
+
+    def angleDiff(self,img):
+        ret1,red_i= findSquare(img,70,74,255)
+        ret2,green_i = findSquare(img,137,146,31)
+        if self.Lclick_count == 1 and ret1 and ret2:
+            red_w = self.pointFixZ(red_i[0],red_i[1],0.5)
+            red_w_xy = np.array([red_w[0],red_w[1]])
+            green_w = self.pointFixZ(green_i[0],green_i[1],0.5)
+            green_w_xy = np.array([green_w[0],green_w[1]])
+            robot_vector = np.array(red_w_xy - green_w_xy)
+
+            target_w_xy = np.array([self.target_w[0],self.target_w[1]])
+            robot_wx = (red_w[0]+green_w[0])/2
+            robot_wy = (red_w[1]+green_w[1])/2
+            robot_w_xy = np.array([robot_wx,robot_wy])
+            target_vector = np.array(target_w_xy - robot_w_xy)
+
+            angle = tangent_angle(robot_vector,target_vector)
+            print(angle)
+
+
 
 def main():
     # 検出するチェッカーボードの交点の数
@@ -383,19 +409,8 @@ def main():
             img_axes = draw(frame1,corners12,imgpts)
             img_axes = es.line_update(img_axes)
             cv2.imshow('camera1', img_axes)      #カメラの画像の出力
-
-            ret1,red= findSquare(frame1,70,74,255)
-            ret2,green = findSquare(frame1,137,146,31)
-            #ret1 = False
-            ret3,target_i = es.getTarget()
-            if ret1 and ret2 and ret3:
-                robot_vector = np.array(red - green)
-                robot_ix = (red[0]+green[0])/2
-                robot_iy = (red[1]+green[1])/2
-                robot_i = np.array([robot_ix,robot_iy])
-                target_vector = np.array(target_i - robot_i)
-                angle = tangent_angle(robot_vector,target_vector)
-                print(angle)
+            
+            es.angleDiff(img_axes)
         
         #繰り返し分から抜けるためのif文
         key =cv2.waitKey(1)
