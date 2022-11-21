@@ -1,3 +1,7 @@
+#!/usr/bin/env python
+import rospy
+from std_msgs.msg import Int16
+
 import numpy as np
 import cv2
 import glob
@@ -6,6 +10,15 @@ import copy
 import math
 import colorsys
 from numpy import linalg as LA
+
+
+def talker(num):
+    pub = rospy.Publisher('toggle_wheel', Int16, queue_size=10)
+    rospy.init_node('talker', anonymous=True)
+    #r = rospy.Rate(10) # 10hz
+    rospy.loginfo(num)
+    pub.publish(num)
+
 
 
 def draw(img, corners, imgpts):         # 座標軸を描画する関数
@@ -279,14 +292,15 @@ class Estimation:
             target_vector = np.array(target_w_xy - robot_w_xy)
 
             angle = tangent_angle(robot_vector,target_vector)
-            print(angle)
+            return True,angle
+        return False,None
 
 
 
 def main():
     # 検出するチェッカーボードの交点の数
-    tate = 3
-    yoko = 4
+    tate = 4
+    yoko = 5
     # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -364,7 +378,7 @@ def main():
         _, frame1 = cap1.read()           #カメラからの画像取得
         gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
         cv2.imshow('camera1' , frame1)
-        corners = np.array([290, 212, 338, 235, 395, 262, 457, 292, 236, 242, 284, 268, 340, 300, 404, 336, 180, 276, 225, 306, 279, 343, 341, 386],dtype='float32').reshape(-1,1,2)
+        corners = np.array([135, 168, 212, 167, 293, 165, 377, 166, 460, 167, 118, 226, 199, 225, 288, 226, 379, 226, 470, 226, 98, 293, 186, 297, 282, 298, 383, 299, 482, 298, 76, 372, 171, 378, 277, 383, 385, 384, 494, 382],dtype='float32').reshape(-1,1,2)
         corners12 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
         imgpoints.append(corners12)
 
@@ -410,7 +424,21 @@ def main():
             img_axes = es.line_update(img_axes)
             cv2.imshow('camera1', img_axes)      #カメラの画像の出力
             
-            es.angleDiff(img_axes)
+            retd, angle = es.angleDiff(img_axes)
+            if retd:
+                #print(angle)
+                if -10 <= angle <= 10:
+                    try:
+                        talker(0)
+                    except rospy.ROSInterruptException: pass
+                elif 10 < angle:
+                    try:
+                        talker(1)
+                    except rospy.ROSInterruptException: pass
+                elif angle < -10:
+                    try:
+                        talker(2)
+                    except rospy.ROSInterruptException: pass
         
         #繰り返し分から抜けるためのif文
         key =cv2.waitKey(1)
