@@ -72,7 +72,7 @@ def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心�
     contours = cv2.findContours(img_mask_bin, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[0]
 
     # 面積が一定以上の輪郭のみ残す。
-    area_thresh = 400
+    area_thresh = 350
     contours = list(filter(lambda x: cv2.contourArea(x) > area_thresh, contours))
     ret = False
     center = 0
@@ -82,7 +82,7 @@ def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心�
         x, y, width, height = cv2.boundingRect(cnt)
         center = [x+(width/2),y+(height/2)]
         # 描画する。
-        cv2.rectangle(img, (x, y), (x + width, y + height), color=(0, 255, 0), thickness=2)
+        cv2.rectangle(img, (x, y), (x + width, y + height), color=(255, g, r), thickness=2)
         cv2.imshow('img_square',img)
         ret = True
     center = np.array(center)
@@ -144,8 +144,7 @@ class Estimation:
         # 回転ベクトルを3×1から3×3に変換
         self.R, _ = cv2.Rodrigues(np.array(self.rvecs))     # 1カメの回転行列
 
-        self.Lclick_count = 0            # 左クリックしたか
-        self.Rclick_count = 0            # 右クリックしたか
+        self.LRMclick = None
 
         # クラス内の関数間で共有したい変数
         self.obj1_i1x = 0               # 1カメでクリックした点の1カメ画像座標
@@ -166,12 +165,17 @@ class Estimation:
         if event == cv2.EVENT_LBUTTONDOWN:
             self.target_i = [x,y]
             self.target_w = self.pointFixZ(x,y,0.5)
-            self.Lclick_count = 1
+            self.LRMclick = 'L'
         elif event == cv2.EVENT_RBUTTONDOWN:
+            self.target_i = [x,y]
+            self.target_w = self.pointFixZ(x,y,0.5)
+            self.LRMclick = 'R'
+        elif event == cv2.EVENT_MBUTTONDOWN:
             print(self.pointFixZ(x,y,0))
             self.obj1_i1x = x
             self.obj1_i1y = y
-            self.Rclick_count = 1
+            self.LRMclick = 'M'
+
 
     def line_SEpoint(self, x, y, num):      # 始点（カメラ）と終点（正規化画像座標）のワールド座標を求める関数，numは1カメか2カメか
         obj_i = [x,y]
@@ -226,10 +230,12 @@ class Estimation:
 
 
     def line_update(self, img):        # エピポーラ線やクリックした点を描画する関数
-        if self.Lclick_count == 1:
+        if self.LRMclick == 'L':
             img = cv2.circle(img, (int(self.target_i[0]),int(self.target_i[1])), 4, (0, 165, 255), thickness=-1)          # 左クリックした点を描画
-        if self.Rclick_count == 1:
-            img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 4, (255,0,255), thickness=-1)          # 右クリックした点を描画
+        elif self.LRMclick == 'R':
+            img = cv2.circle(img, (int(self.target_i[0]),int(self.target_i[1])), 4, (255, 165, 0), thickness=-1)          # 右クリックした点を描画
+        elif self.LRMclick == 'M':
+            img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 4, (255,0,255), thickness=-1)          # 中クリックした点を描画
         return img
 
 
@@ -276,9 +282,9 @@ class Estimation:
     """
 
     def angleDiff(self,img):
-        ret1,red_i= findSquare(img,70,74,255)
-        ret2,green_i = findSquare(img,137,146,31)
-        if self.Lclick_count == 1 and ret1 and ret2:
+        ret1,red_i= findSquare(img,57,67,255)
+        ret2,green_i = findSquare(img,98,142,53)
+        if (self.LRMclick == 'L' or 'R') and ret1 and ret2:
             red_w = self.pointFixZ(red_i[0],red_i[1],0.5)
             red_w_xy = np.array([red_w[0],red_w[1]])
             green_w = self.pointFixZ(green_i[0],green_i[1],0.5)
@@ -292,8 +298,10 @@ class Estimation:
             target_vector = np.array(target_w_xy - robot_w_xy)
 
             angle = tangent_angle(robot_vector,target_vector)
-            return True,angle
-        return False,None
+
+            distance = math.sqrt((target_w_xy[0]-robot_w_xy[0])**2 + (target_w_xy[1]-robot_w_xy[1])**2)
+            return True,angle,distance,self.LRMclick
+        return False,None,None,None
 
 
 
@@ -424,13 +432,23 @@ def main():
             img_axes = es.line_update(img_axes)
             cv2.imshow('camera1', img_axes)      #カメラの画像の出力
             
-            retd, angle = es.angleDiff(img_axes)
+            retd, angle, distance, LRM = es.angleDiff(img_axes)
             if retd:
                 #print(angle)
-                if -10 <= angle <= 10:
-                    try:
-                        talker(0)
-                    except rospy.ROSInterruptException: pass
+                if -10 <= angle <= 10:          # 目的方向を向いていたら
+                    if LRM == 'L':                  # 左クリックしていたら
+                        if distance > 0.2:              # 目的地から離れていたら
+                            try:
+                                talker(3)               # 前進
+                            except rospy.ROSInterruptException: pass
+                        else:                           # 目的地に到着したら
+                            try:
+                                talker(0)               # 停止
+                            except rospy.ROSInterruptException: pass
+                    elif LRM == 'R':                # 右クリックしていたら
+                        try:
+                            talker(0)               # 停止
+                        except rospy.ROSInterruptException: pass
                 elif 10 < angle:
                     try:
                         talker(1)
@@ -439,7 +457,9 @@ def main():
                     try:
                         talker(2)
                     except rospy.ROSInterruptException: pass
-        
+
+
+            
         #繰り返し分から抜けるためのif文
         key =cv2.waitKey(1)
         if key == 27:   #Escで終了
