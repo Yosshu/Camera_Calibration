@@ -144,7 +144,7 @@ class Estimation:
         # 回転ベクトルを3×1から3×3に変換
         self.R, _ = cv2.Rodrigues(np.array(self.rvecs))     # 1カメの回転行列
 
-        self.LRMclick = None
+        self.LRMclick = None    # 左右中クリックの判断
 
         # クラス内の関数間で共有したい変数
         self.obj1_i1x = 0               # 1カメでクリックした点の1カメ画像座標
@@ -157,20 +157,20 @@ class Estimation:
         self.obj1_w = []                # 1カメでクリックした点のワールド座標
 
 
-        self.target_i = []
-        self.target_w = []
+        self.target_i = []  # 左or右クリックした点の画像座標
+        self.target_w = []  # 左or右クリックした点のワールド座標
 
 
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
-        if event == cv2.EVENT_LBUTTONDOWN:
+        if event == cv2.EVENT_LBUTTONDOWN:      # 左クリック
             self.target_i = [x,y]
             self.target_w = self.pointFixZ(x,y,0.5)
             self.LRMclick = 'L'
-        elif event == cv2.EVENT_RBUTTONDOWN:
+        elif event == cv2.EVENT_RBUTTONDOWN:    # 右クリック
             self.target_i = [x,y]
             self.target_w = self.pointFixZ(x,y,0.5)
             self.LRMclick = 'R'
-        elif event == cv2.EVENT_MBUTTONDOWN:
+        elif event == cv2.EVENT_MBUTTONDOWN:    # 中クリック
             print(self.pointFixZ(x,y,0))
             self.obj1_i1x = x
             self.obj1_i1y = y
@@ -281,25 +281,24 @@ class Estimation:
         return ret, self.target_i
     """
 
-    def angleDiff(self,img):
-        ret1,red_i= findSquare(img,57,67,255)
-        ret2,green_i = findSquare(img,98,142,53)
-        if (self.LRMclick == 'L' or 'R') and ret1 and ret2:
-            red_w = self.pointFixZ(red_i[0],red_i[1],0.5)
-            red_w_xy = np.array([red_w[0],red_w[1]])
-            green_w = self.pointFixZ(green_i[0],green_i[1],0.5)
-            green_w_xy = np.array([green_w[0],green_w[1]])
-            robot_vector = np.array(red_w_xy - green_w_xy)
+    def angleDiff(self,img):        # ロボットの向きと目標方向の角度差，ロボットと目標位置の距離，左クリックしたのか右クリックしたのかを返す関数
+        ret1,red_i= findSquare(img,57,67,255)       # 赤パネルの画像座標
+        ret2,green_i = findSquare(img,98,142,53)    # 緑パネルの画像座標
+        if (self.LRMclick == 'L' or self.LRMclick == 'R') and ret1 and ret2:     # 左クリックか右クリックしていたら
+            red_w = self.pointFixZ(red_i[0],red_i[1],0.5)       # 赤パネルのワールド座標
+            red_w_xy = np.array([red_w[0],red_w[1]])            # 赤パネルのワールド座標のXw,Yw
+            green_w = self.pointFixZ(green_i[0],green_i[1],0.5) # 緑パネルのワールド座標
+            green_w_xy = np.array([green_w[0],green_w[1]])      # 緑パネルのワールド座標のXw,Yw
+            robot_vector = np.array(red_w_xy - green_w_xy)      # ロボットの向きベクトル
+            target_w_xy = np.array([self.target_w[0],self.target_w[1]]) # 目標位置のワールド座標のXw,Yw
+            robot_wx = (red_w[0]+green_w[0])/2                  # ロボットのワールド座標のXw
+            robot_wy = (red_w[1]+green_w[1])/2                  # ロボットのワールド座標のYw
+            robot_w_xy = np.array([robot_wx,robot_wy])          # ロボットのワールド座標のXw,Yw
+            target_vector = np.array(target_w_xy - robot_w_xy)  # 目的方向のベクトル
 
-            target_w_xy = np.array([self.target_w[0],self.target_w[1]])
-            robot_wx = (red_w[0]+green_w[0])/2
-            robot_wy = (red_w[1]+green_w[1])/2
-            robot_w_xy = np.array([robot_wx,robot_wy])
-            target_vector = np.array(target_w_xy - robot_w_xy)
+            angle = tangent_angle(robot_vector,target_vector)   # ロボットの向きと目標方向の角度差
 
-            angle = tangent_angle(robot_vector,target_vector)
-
-            distance = math.sqrt((target_w_xy[0]-robot_w_xy[0])**2 + (target_w_xy[1]-robot_w_xy[1])**2)
+            distance = math.sqrt((target_w_xy[0]-robot_w_xy[0])**2 + (target_w_xy[1]-robot_w_xy[1])**2)     # ロボットと目標位置の距離
             return True,angle,distance,self.LRMclick
         return False,None,None,None
 
