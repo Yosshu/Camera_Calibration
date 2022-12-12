@@ -10,6 +10,7 @@ import copy
 import math
 import colorsys
 from numpy import linalg as LA
+from itertools import product
 
 
 def talker(num):
@@ -76,18 +77,33 @@ def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心�
     contours = list(filter(lambda x: cv2.contourArea(x) > area_thresh, contours))
     ret = False
     center = 0
+    centers = []
     # 輪郭を矩形で囲む。
     for cnt in contours:
         # 輪郭に外接する長方形を取得する。
         x, y, width, height = cv2.boundingRect(cnt)
         center = [x+(width/2),y+(height/2)]
+        centers.append(center)
         # 描画する。
         cv2.rectangle(img, (x, y), (x + width, y + height), color=(255, g, r), thickness=2)
         cv2.imshow('img_square',img)
         ret = True
-    center = np.array(center)
-    return ret,center
+    centers = np.array(centers).reshape(-1,2)
+    return ret,centers
 
+
+def nearest(ret,a,b):
+    if ret:
+        na, nb = len(a), len(b)
+        ## Combinations of a and b
+        comb = product(range(na), range(nb))
+        ## [[distance, index number(a), index number(b)], ... ]
+        l = [[np.linalg.norm(a[ia] - b[ib]), ia, ib] for ia, ib in comb]
+        ## Sort with distance
+        l.sort(key=lambda x: x[0])
+        _, ia, ib = l[0]
+        return a[ia], b[ib]
+    return None,None
 
 def tangent_angle(u: np.ndarray, v: np.ndarray):        # 2つのベクトルのなす角を求める関数
     i = np.inner(u, v)
@@ -282,8 +298,11 @@ class Estimation:
     """
 
     def angleDiff(self,img):        # ロボットの向きと目標方向の角度差，ロボットと目標位置の距離，左クリックしたのか右クリックしたのかを返す関数
-        ret1,red_i= findSquare(img,57,67,255)       # 赤パネルの画像座標
-        ret2,green_i = findSquare(img,98,142,53)    # 緑パネルの画像座標
+        ret1,reds_i= findSquare(img,57,67,255)       # 赤パネルの画像座標
+        ret2,greens_i = findSquare(img,98,142,53)    # 緑パネルの画像座標
+        ret3 = ret1 and ret2
+        red_i,green_i = nearest(ret3,reds_i,greens_i)
+
         if (self.LRMclick == 'L' or self.LRMclick == 'R') and ret1 and ret2:     # 左クリックか右クリックしていたら
             red_w = self.pointFixZ(red_i[0],red_i[1],0.5)       # 赤パネルのワールド座標
             red_w_xy = np.array([red_w[0],red_w[1]])            # 赤パネルのワールド座標のXw,Yw
