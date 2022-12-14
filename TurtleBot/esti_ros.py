@@ -86,7 +86,7 @@ def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心�
         centers.append(center)
         # 描画する。
         cv2.rectangle(img, (x, y), (x + width, y + height), color=(255, g, r), thickness=2)
-        cv2.imshow('img_square',img)
+        #cv2.imshow('img_square',img)
         ret = True
     centers = np.array(centers).reshape(-1,2)
     return ret,centers
@@ -316,8 +316,24 @@ class Estimation:
             target_vector = np.array(target_w_xy - robot_w_xy)  # 目的方向のベクトル
 
             angle = tangent_angle(robot_vector,target_vector)   # ロボットの向きと目標方向の角度差
-
+            
             distance = math.sqrt((target_w_xy[0]-robot_w_xy[0])**2 + (target_w_xy[1]-robot_w_xy[1])**2)     # ロボットと目標位置の距離
+
+
+            robot_ix = (red_i[0]+green_i[0])/2
+            robot_iy = (red_i[1]+green_i[1])/2
+            cv2.arrowedLine(img,
+                pt1=(int(robot_ix), int(robot_iy)),
+                pt2=(int(self.target_i[0]), int(self.target_i[1])),
+                color=(255, 150, 150),
+                thickness=3,
+                line_type=cv2.LINE_4,
+                shift=0,
+                tipLength=0.1)
+            
+            cv2.imshow("img_vector",img)
+            
+
             return True,angle,distance,self.LRMclick
         return False,None,None,None
 
@@ -421,6 +437,7 @@ def main():
     """
     mtx = np.array([590, 0, frame1.shape[1]/2, 0, 590, frame1.shape[0]/2, 0, 0, 1]).reshape(3,3)
 
+
     dist = np.array([-0.55376925, 1.99642305, 0.00695332, -0.02167939, 2.74771938, 0.54082278, 0.04485288, 4.88112929, 0, 0, 0, 0, 0, 0]).reshape(1,-1)
     _, rvecs, tvecs, _ = cv2.solvePnPRansac(objp, corners12, mtx, dist)
     rvecs = [rvecs]
@@ -488,6 +505,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 """
 【参考】
