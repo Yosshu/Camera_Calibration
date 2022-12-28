@@ -4,6 +4,7 @@ from std_msgs.msg import Int16
 
 import numpy as np
 import cv2
+aruco = cv2.aruco
 import glob
 import pyautogui
 import copy
@@ -13,11 +14,12 @@ from numpy import linalg as LA
 from itertools import product
 
 
+
 def talker(num):
     pub = rospy.Publisher('toggle_wheel', Int16, queue_size=10)
     rospy.init_node('talker', anonymous=True)
     #r = rospy.Rate(10) # 10hz
-    rospy.loginfo(num)
+    #rospy.loginfo(num)
     pub.publish(num)
 
 
@@ -61,8 +63,8 @@ def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心�
     v = int(hsv[2]*255)
     img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     
-    lower_color = np.array([h-15, s-40, v-100]) 
-    upper_color = np.array([h+15, s+40, v+100]) 
+    lower_color = np.array([h-25, s-60, v-120]) 
+    upper_color = np.array([h+25, s+60, v+120]) 
 
     mask = cv2.inRange(img_hsv, lower_color, upper_color) 
     img_mask = cv2.bitwise_and(img, img, mask = mask)
@@ -126,32 +128,6 @@ class Estimation:
         self.rvecs = rvecs              # 1カメの回転ベクトル
         self.tvecs = tvecs              # 1カメの並進ベクトル
 
-        """
-        self.k1_1 = dist[0][0] 
-        self.k2_1 = dist[0][1] 
-        self.p1_1 = dist[0][2] 
-        self.p2_1 = dist[0][3] 
-        self.k3_1 = dist[0][4] 
-        self.k4_1 = dist[0][5] 
-        self.k5_1 = dist[0][6] 
-        self.k6_1 = dist[0][7] 
-
-        self.k1_2 = dist2[0][0] 
-        self.k2_2 = dist2[0][1] 
-        self.p1_2 = dist2[0][2] 
-        self.p2_2 = dist2[0][3] 
-        self.k3_2 = dist2[0][4] 
-        self.k4_2 = dist2[0][5] 
-        self.k5_2 = dist2[0][6] 
-        self.k6_2 = dist2[0][7] 
-        """
-
-        """
-        h,  w = img.shape[:2]
-        self.newcameramtx, self.roi = cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
-        self.newcameramtx2, self.roi2 = cv2.getOptimalNewCameraMatrix(mtx2,dist2,(w,h),1,(w,h))
-        """
-
 
         self.imgpoints = imgpoints      # 1カメで見つかったチェッカーボードの交点の画像座標
         self.tate = tate                # 検出するチェッカーボードの交点の縦の数
@@ -167,7 +143,7 @@ class Estimation:
         self.obj1_i1y = 0
         self.img = img      # 軸だけ描画された1カメの画像
         self.pn = [1, 1, 1]             # 1 or -1，ワールド座標がプラスかマイナスか，出力する直前にかける [X軸座標, Y軸座標, Z軸座標]
-        self.origin = []
+        #self.origin = []
 
         self.camera1_w = []             # 1カメのワールド座標
         self.obj1_w = []                # 1カメでクリックした点のワールド座標
@@ -175,6 +151,8 @@ class Estimation:
 
         self.target_i = []  # 左or右クリックした点の画像座標
         self.target_w = []  # 左or右クリックした点のワールド座標
+
+        self.scale = 50      # 1マス50cm
 
 
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
@@ -187,7 +165,9 @@ class Estimation:
             self.target_w = self.pointFixZ(x,y,0.5)
             self.LRMclick = 'R'
         elif event == cv2.EVENT_MBUTTONDOWN:    # 中クリック
-            print(self.pointFixZ(x,y,0))
+            res = self.pointFixZ(x,y,0)
+            res = [round(n*self.scale,3) for n in res]
+            print(f"{res} [cm]")
             self.obj1_i1x = x
             self.obj1_i1y = y
             self.LRMclick = 'M'
@@ -247,11 +227,11 @@ class Estimation:
 
     def line_update(self, img):        # エピポーラ線やクリックした点を描画する関数
         if self.LRMclick == 'L':
-            img = cv2.circle(img, (int(self.target_i[0]),int(self.target_i[1])), 4, (0, 165, 255), thickness=-1)          # 左クリックした点を描画
+            img = cv2.circle(img, (int(self.target_i[0]),int(self.target_i[1])), 2, (0, 165, 255), thickness=-1)          # 左クリックした点を描画
         elif self.LRMclick == 'R':
-            img = cv2.circle(img, (int(self.target_i[0]),int(self.target_i[1])), 4, (255, 165, 0), thickness=-1)          # 右クリックした点を描画
+            img = cv2.circle(img, (int(self.target_i[0]),int(self.target_i[1])), 2, (255, 165, 0), thickness=-1)          # 右クリックした点を描画
         elif self.LRMclick == 'M':
-            img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 4, (255,0,255), thickness=-1)          # 中クリックした点を描画
+            img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 2, (255,0,255), thickness=-1)          # 中クリックした点を描画
         return img
 
 
@@ -286,7 +266,6 @@ class Estimation:
         floor_wx = round(floor_wx, 4)
         floor_wy = round(floor_wy, 4)
 
-        #scale = 50      # 1マス50cm
         return [floor_wx,floor_wy,-floor_wz]
 
     """
@@ -297,21 +276,19 @@ class Estimation:
         return ret, self.target_i
     """
 
-    def angleDiff(self,img):        # ロボットの向きと目標方向の角度差，ロボットと目標位置の距離，左クリックしたのか右クリックしたのかを返す関数
-        ret1,reds_i= findSquare(img,57,67,255)       # 赤パネルの画像座標
-        ret2,greens_i = findSquare(img,98,142,53)    # 緑パネルの画像座標
-        ret3 = ret1 and ret2
-        red_i,green_i = nearest(ret3,reds_i,greens_i)
-
-        if (self.LRMclick == 'L' or self.LRMclick == 'R') and ret1 and ret2:     # 左クリックか右クリックしていたら
-            red_w = self.pointFixZ(red_i[0],red_i[1],0.5)       # 赤パネルのワールド座標
-            red_w_xy = np.array([red_w[0],red_w[1]])            # 赤パネルのワールド座標のXw,Yw
-            green_w = self.pointFixZ(green_i[0],green_i[1],0.5) # 緑パネルのワールド座標
-            green_w_xy = np.array([green_w[0],green_w[1]])      # 緑パネルのワールド座標のXw,Yw
-            robot_vector = np.array(red_w_xy - green_w_xy)      # ロボットの向きベクトル
+    def angleDiff(self,img,img2,dictionary,parameters):        # ロボットの向きと目標方向の角度差，ロボットと目標位置の距離，左クリックしたのか右クリックしたのかを返す関数
+        corners, ids, _ = aruco.detectMarkers(img, dictionary, parameters=parameters)
+        if (self.LRMclick == 'L' or self.LRMclick == 'R') and corners:     # 左クリックか右クリックしていたら
+            robot_front_i = [(corners[0][0][0][0]+corners[0][0][1][0])/2,(corners[0][0][0][1]+corners[0][0][1][1])/2]
+            robot_back_i  = [(corners[0][0][2][0]+corners[0][0][3][0])/2,(corners[0][0][2][1]+corners[0][0][3][1])/2]
+            robot_front_w = self.pointFixZ(robot_front_i[0],robot_front_i[1],0.5)       # 赤パネルのワールド座標
+            robot_front_w_xy = np.array([robot_front_w[0],robot_front_w[1]])            # 赤パネルのワールド座標のXw,Yw
+            robot_back_w = self.pointFixZ(robot_back_i[0],robot_back_i[1],0.5) # 緑パネルのワールド座標
+            robot_back_w_xy = np.array([robot_back_w[0],robot_back_w[1]])      # 緑パネルのワールド座標のXw,Yw
+            robot_vector = np.array(robot_front_w_xy - robot_back_w_xy)      # ロボットの向きベクトル
             target_w_xy = np.array([self.target_w[0],self.target_w[1]]) # 目標位置のワールド座標のXw,Yw
-            robot_wx = (red_w[0]+green_w[0])/2                  # ロボットのワールド座標のXw
-            robot_wy = (red_w[1]+green_w[1])/2                  # ロボットのワールド座標のYw
+            robot_wx = (robot_front_w[0]+robot_back_w[0])/2                  # ロボットのワールド座標のXw
+            robot_wy = (robot_front_w[1]+robot_back_w[1])/2                  # ロボットのワールド座標のYw
             robot_w_xy = np.array([robot_wx,robot_wy])          # ロボットのワールド座標のXw,Yw
             target_vector = np.array(target_w_xy - robot_w_xy)  # 目的方向のベクトル
 
@@ -320,20 +297,26 @@ class Estimation:
             distance = math.sqrt((target_w_xy[0]-robot_w_xy[0])**2 + (target_w_xy[1]-robot_w_xy[1])**2)     # ロボットと目標位置の距離
 
 
-            robot_ix = (red_i[0]+green_i[0])/2
-            robot_iy = (red_i[1]+green_i[1])/2
-            cv2.arrowedLine(img,
+            robot_ix = (robot_front_i[0]+robot_back_i[0])/2
+            robot_iy = (robot_front_i[1]+robot_back_i[1])/2
+            
+            arrow_color = ()
+            if self.LRMclick == 'L':
+                arrow_color = (0, 165, 255)
+            elif self.LRMclick == 'R':
+                arrow_color = (255, 165, 0)
+
+            cv2.arrowedLine(img2,                                # 矢印
                 pt1=(int(robot_ix), int(robot_iy)),
                 pt2=(int(self.target_i[0]), int(self.target_i[1])),
-                color=(255, 150, 150),
+                color=arrow_color,
                 thickness=3,
                 line_type=cv2.LINE_4,
                 shift=0,
                 tipLength=0.1)
             
-            cv2.imshow("img_vector",img)
+            cv2.imshow("camera1",img2)
             
-
             return True,angle,distance,self.LRMclick
         return False,None,None,None
 
@@ -341,8 +324,8 @@ class Estimation:
 
 def main():
     # 検出するチェッカーボードの交点の数
-    tate = 4
-    yoko = 5
+    tate = 5
+    yoko = 6
     # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -356,6 +339,12 @@ def main():
 
     # 軸の定義
     axis = np.float32([[2,0,0], [0,2,0], [0,0,-2]]).reshape(-1,3)
+
+
+    dictionary = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
+    parameters =  aruco.DetectorParameters_create()
+    # CORNER_REFINE_NONE, no refinement. CORNER_REFINE_SUBPIX, do subpixel refinement. CORNER_REFINE_CONTOUR use contour-Points
+    parameters.cornerRefinementMethod = aruco.CORNER_REFINE_CONTOUR
 
     cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
 
@@ -374,6 +363,7 @@ def main():
         
         while True:
             _, frame1 = cap1.read()           #カメラからの画像取得
+            frame1 = cv2.resize(frame1,dsize=(frame1.shape[1]*2,frame1.shape[0]*2))
 
             if ret01 == True:
                 img_axes0 = frame1.copy()
@@ -420,7 +410,7 @@ def main():
         _, frame1 = cap1.read()           #カメラからの画像取得
         gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
         cv2.imshow('camera1' , frame1)
-        corners = np.array([135, 168, 212, 167, 293, 165, 377, 166, 460, 167, 118, 226, 199, 225, 288, 226, 379, 226, 470, 226, 98, 293, 186, 297, 282, 298, 383, 299, 482, 298, 76, 372, 171, 378, 277, 383, 385, 384, 494, 382],dtype='float32').reshape(-1,1,2)
+        corners = np.array([143, 163, 214, 163, 289, 163, 365, 164, 441, 166, 513, 167, 125, 212, 202, 212, 284, 212, 368, 215, 451, 215, 530, 216, 106, 269, 189, 271, 278, 273, 371, 274, 462, 275, 547, 273, 85, 336, 174, 342, 272, 346, 373, 347, 474, 346, 566, 343, 64, 415, 159, 425, 265, 431, 377, 433, 486, 431, 586, 423],dtype='float32').reshape(-1,1,2)
         corners12 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
         imgpoints.append(corners12)
 
@@ -435,10 +425,12 @@ def main():
     """
     ret, mtx, dist, _, _ = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None,flags=cv2.CALIB_RATIONAL_MODEL) # _, _ は，rvecs, tvecs
     """
-    mtx = np.array([590, 0, frame1.shape[1]/2, 0, 590, frame1.shape[0]/2, 0, 0, 1]).reshape(3,3)
+    mtx = np.array([679.96806792, 0, 346.17428752, 0, 680.073095, 223.11864352, 0, 0, 1]).reshape(3,3)
+    # 640,480
 
+    dist = np.array([-4.65322789e-01, 3.88192556e-01, -2.58061417e-03, -1.69216076e-04, -3.97886097e-01])
 
-    dist = np.array([-0.55376925, 1.99642305, 0.00695332, -0.02167939, 2.74771938, 0.54082278, 0.04485288, 4.88112929, 0, 0, 0, 0, 0, 0]).reshape(1,-1)
+    #dist = np.array([-0.55376925, 1.99642305, 0.00695332, -0.02167939, 2.74771938, 0.54082278, 0.04485288, 4.88112929, 0, 0, 0, 0, 0, 0]).reshape(1,-1)
     _, rvecs, tvecs, _ = cv2.solvePnPRansac(objp, corners12, mtx, dist)
     rvecs = [rvecs]
     tvecs = [tvecs]
@@ -460,39 +452,38 @@ def main():
 
     cv2.setMouseCallback('camera1', es.onMouse)         # 1カメの画像に対するクリックイベント
     
+    talker_num = 0
+
     while True:
         ret, frame1 = cap1.read()           #カメラからの画像取得
+        img_axes = frame1.copy()
+        img_axes = draw(img_axes,corners12,imgpts)
+        #frame1 = cv2.resize(frame1,dsize=(frame1.shape[1]*2,frame1.shape[0]*2))
         if ret:
-            img_axes = draw(frame1,corners12,imgpts)
             img_axes = es.line_update(img_axes)
             cv2.imshow('camera1', img_axes)      #カメラの画像の出力
-            
-            retd, angle, distance, LRM = es.angleDiff(img_axes)
+
+            retd, angle, distance, LRM = es.angleDiff(frame1,img_axes,dictionary,parameters)
             if retd:
                 #print(angle)
                 if -10 <= angle <= 10:          # 目的方向を向いていたら
                     if LRM == 'L':                  # 左クリックしていたら
-                        if distance > 0.2:              # 目的地から離れていたら
-                            try:
-                                talker(3)               # 前進
-                            except rospy.ROSInterruptException: pass
+                        if distance > 0.4:              # 目的地から離れていたら
+                            talker_num = 3               # 前進
                         else:                           # 目的地に到着したら
-                            try:
-                                talker(0)               # 停止
-                            except rospy.ROSInterruptException: pass
+                            talker_num = 0               # 停止
                     elif LRM == 'R':                # 右クリックしていたら
-                        try:
-                            talker(0)               # 停止
-                        except rospy.ROSInterruptException: pass
+                        talker_num = 0
                 elif 10 < angle:
-                    try:
-                        talker(1)
-                    except rospy.ROSInterruptException: pass
+                    talker_num = 1
                 elif angle < -10:
-                    try:
-                        talker(2)
-                    except rospy.ROSInterruptException: pass
+                    talker_num = 2
+            elif retd == False:
+                talker_num = 0
 
+        try:
+            talker(talker_num)               # 前進
+        except rospy.ROSInterruptException: pass
 
             
         #繰り返し分から抜けるためのif文
