@@ -2,7 +2,6 @@
 
 import rospy
 from std_msgs.msg import Int16MultiArray
-from std_msgs.msg import Int16
 import numpy as np
 import cv2
 
@@ -12,7 +11,7 @@ class depthimg():
         # Subscriberの作成
         self.sub = rospy.Subscriber('img_data', Int16MultiArray, self.callback)
         # Publisherの作成
-        self.pub = rospy.Publisher('depth_data', Int16, queue_size=1)
+        self.pub = rospy.Publisher('depth_data', Int16MultiArray, queue_size=1)
 
     def callback(self,data):
         tate = 240
@@ -46,7 +45,9 @@ class depthimg():
                 print("Error")
             else:
                 print(f'座標({x},{y})までの距離は{z/1000}[m]です')
-                self.publish(z//10)
+                data_array = np.array([x,y,z//10]).astype(int)
+                pub_array = Int16MultiArray(data=data_array)
+                self.publish(pub_array)
 
 
 
