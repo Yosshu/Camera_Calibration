@@ -176,17 +176,27 @@ class Estimation:
             robot_dirction = np.arctan2(self.robot_vector[1],self.robot_vector[0])
             robot_cos = math.cos(robot_dirction)
             robot_sin = math.sin(robot_dirction)
-            target_w_x = (self.robot_w[0]*self.scale) + (depth * robot_cos)
-            target_w_y = (self.robot_w[1]*self.scale) + (depth * robot_sin)
+            obj_w_x = (self.robot_w[0]*self.scale) + (depth * robot_cos)
+            obj_w_y = (self.robot_w[1]*self.scale) + (depth * robot_sin)
 
             height = self.getHeight(depy,depth)
-            print(f'{[round(target_w_x,3), round(target_w_y,3), round(28.5+height,3)]} [cm]')
+
+            width = self.getWidth(depx,depth)
+            widthX = -width*robot_sin
+            widthY = -width*robot_cos
+
+            print(f'{[round(obj_w_x+widthX,3), round(obj_w_y+widthY,3), round(28.5+height,3)]} [cm]')
 
 
     def getHeight(self,y,d):
         v = y-self.depmtx[1][2]
         h = -(v*d)/self.depf
         return h
+
+    def getWidth(self,x,d):
+        u = x-self.depmtx[0][2]
+        w = (u*d)/self.depf
+        return w
 
     def talker(self, num):
         #rospy.loginfo(num)
