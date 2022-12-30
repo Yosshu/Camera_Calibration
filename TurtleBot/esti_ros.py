@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import rospy
 from std_msgs.msg import Int16
+from std_msgs.msg import Int16MultiArray
 
 import numpy as np
 import cv2
@@ -152,22 +153,40 @@ class Estimation:
         self.ret_robot = False
 
 
+        self.depmtx = np.array([610.438, 0, 321.61958462, 
+                                0, 610.827, 250.53954371, 
+                                0, 0, 1]).reshape(3,3)        # RealSenseの内部パラメータ
+        self.depdist = np.array([0.06582571, 0.24423383, 0.00201921, 0.00146058, -1.27553243])                              # RealSenseの歪み係数
+        self.depf = (self.depmtx[0][0]+self.depmtx[1][1])/2     # RealSenseの焦点距離
+
 
         # ROS関連
         # Subscriberの作成
-        self.sub = rospy.Subscriber('depth_data', Int16, self.callback)
+        self.sub = rospy.Subscriber('depth_data', Int16MultiArray, self.callback)
         # Publisherの作成
         self.pub = rospy.Publisher('toggle_wheel', Int16, queue_size=10)
     def callback(self,data):
         if self.ret_robot:
-            depth = data.data
+            datadata = data.data
+            depx = datadata[0]
+            depy = datadata[1]
+            depth = datadata[2]
+
             #print(f'{depth} cm')
             robot_dirction = np.arctan2(self.robot_vector[1],self.robot_vector[0])
             robot_cos = math.cos(robot_dirction)
             robot_sin = math.sin(robot_dirction)
             target_w_x = (self.robot_w[0]*self.scale) + (depth * robot_cos)
             target_w_y = (self.robot_w[1]*self.scale) + (depth * robot_sin)
-            print(f'{[target_w_x, target_w_y, 0.5*self.scale]} [cm]')
+
+            height = self.getHeight(depy,depth)
+            print(f'{[round(target_w_x,3), round(target_w_y,3), round(28.5+height,3)]} [cm]')
+
+
+    def getHeight(self,y,d):
+        v = y-self.depmtx[1][2]
+        h = -(v*d)/self.depf
+        return h
 
     def talker(self, num):
         #rospy.loginfo(num)
@@ -452,7 +471,6 @@ def main():
 
     dist = np.array([-4.65322789e-01, 3.88192556e-01, -2.58061417e-03, -1.69216076e-04, -3.97886097e-01])
 
-    #dist = np.array([-0.55376925, 1.99642305, 0.00695332, -0.02167939, 2.74771938, 0.54082278, 0.04485288, 4.88112929, 0, 0, 0, 0, 0, 0]).reshape(1,-1)
     _, rvecs, tvecs, _ = cv2.solvePnPRansac(objp, corners12, mtx, dist)
     rvecs = [rvecs]
     tvecs = [tvecs]
