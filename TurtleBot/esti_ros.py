@@ -15,15 +15,6 @@ from itertools import product
 
 
 
-def talker(num):
-    pub = rospy.Publisher('toggle_wheel', Int16, queue_size=10)
-    rospy.init_node('talker', anonymous=True)
-    #r = rospy.Rate(10) # 10hz
-    #rospy.loginfo(num)
-    pub.publish(num)
-
-
-
 def draw(img, corners, imgpts):         # 座標軸を描画する関数
     #corner = tuple(corners[0].ravel())
     img = cv2.line(img, (int(corners[0][0][0]), int(corners[0][0][1])), (int(imgpts[0][0][0]), int(imgpts[0][0][1])), (255,0,0), 3)   # X軸 Blue
@@ -121,6 +112,8 @@ def tangent_angle(u: np.ndarray, v: np.ndarray):        # 2つのベクトルの
     return output
 
 
+
+
 class Estimation:
     def __init__(self, mtx, dist, rvecs, tvecs, img, imgpoints, tate, yoko):
         self.mtx = mtx                  # 1カメの内部パラメータ
@@ -153,6 +146,33 @@ class Estimation:
         self.target_w = []  # 左or右クリックした点のワールド座標
 
         self.scale = 50      # 1マス50cm
+
+        self.robot_w = []
+        self.robot_vector = []
+        self.ret_robot = False
+
+
+
+        # ROS関連
+        # Subscriberの作成
+        self.sub = rospy.Subscriber('depth_data', Int16, self.callback)
+        # Publisherの作成
+        self.pub = rospy.Publisher('toggle_wheel', Int16, queue_size=10)
+    def callback(self,data):
+        if self.ret_robot:
+            depth = data.data
+            #print(f'{depth} cm')
+            robot_dirction = np.arctan2(self.robot_vector[1],self.robot_vector[0])
+            robot_cos = math.cos(robot_dirction)
+            robot_sin = math.sin(robot_dirction)
+            target_w_x = (self.robot_w[0]*self.scale) + (depth * robot_cos)
+            target_w_y = (self.robot_w[1]*self.scale) + (depth * robot_sin)
+            print(f'{[target_w_x, target_w_y, 0.5*self.scale]} [cm]')
+
+    def talker(self, num):
+        #rospy.loginfo(num)
+        self.pub.publish(num)
+
 
 
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
@@ -278,46 +298,48 @@ class Estimation:
 
     def angleDiff(self,img,img2,dictionary,parameters):        # ロボットの向きと目標方向の角度差，ロボットと目標位置の距離，左クリックしたのか右クリックしたのかを返す関数
         corners, ids, _ = aruco.detectMarkers(img, dictionary, parameters=parameters)
-        if (self.LRMclick == 'L' or self.LRMclick == 'R') and corners:     # 左クリックか右クリックしていたら
+        if corners:                                                                                             # ロボットが見つかったら
+            self.ret_robot = True
             robot_front_i = [(corners[0][0][0][0]+corners[0][0][1][0])/2,(corners[0][0][0][1]+corners[0][0][1][1])/2]
             robot_back_i  = [(corners[0][0][2][0]+corners[0][0][3][0])/2,(corners[0][0][2][1]+corners[0][0][3][1])/2]
             robot_front_w = self.pointFixZ(robot_front_i[0],robot_front_i[1],0.5)       # 赤パネルのワールド座標
             robot_front_w_xy = np.array([robot_front_w[0],robot_front_w[1]])            # 赤パネルのワールド座標のXw,Yw
             robot_back_w = self.pointFixZ(robot_back_i[0],robot_back_i[1],0.5) # 緑パネルのワールド座標
             robot_back_w_xy = np.array([robot_back_w[0],robot_back_w[1]])      # 緑パネルのワールド座標のXw,Yw
-            robot_vector = np.array(robot_front_w_xy - robot_back_w_xy)      # ロボットの向きベクトル
-            target_w_xy = np.array([self.target_w[0],self.target_w[1]]) # 目標位置のワールド座標のXw,Yw
+            self.robot_vector = np.array(robot_front_w_xy - robot_back_w_xy)      # ロボットの向きベクトル
             robot_wx = (robot_front_w[0]+robot_back_w[0])/2                  # ロボットのワールド座標のXw
             robot_wy = (robot_front_w[1]+robot_back_w[1])/2                  # ロボットのワールド座標のYw
+            self.robot_w = [robot_wx,robot_wy,0.5]
             robot_w_xy = np.array([robot_wx,robot_wy])          # ロボットのワールド座標のXw,Yw
-            target_vector = np.array(target_w_xy - robot_w_xy)  # 目的方向のベクトル
+            if (self.LRMclick == 'L' or self.LRMclick == 'R'):                                              # 左クリックか右クリックしていたら
+                target_w_xy = np.array([self.target_w[0],self.target_w[1]]) # 目標位置のワールド座標のXw,Yw
+                target_vector = np.array(target_w_xy - robot_w_xy)  # 目的方向のベクトル
+                angle = tangent_angle(self.robot_vector,target_vector)   # ロボットの向きと目標方向の角度差
+                distance = math.sqrt((target_w_xy[0]-robot_w_xy[0])**2 + (target_w_xy[1]-robot_w_xy[1])**2)     # ロボットと目標位置の距離
 
-            angle = tangent_angle(robot_vector,target_vector)   # ロボットの向きと目標方向の角度差
-            
-            distance = math.sqrt((target_w_xy[0]-robot_w_xy[0])**2 + (target_w_xy[1]-robot_w_xy[1])**2)     # ロボットと目標位置の距離
+                robot_ix = (robot_front_i[0]+robot_back_i[0])/2
+                robot_iy = (robot_front_i[1]+robot_back_i[1])/2
 
+                arrow_color = ()
+                if self.LRMclick == 'L':
+                    arrow_color = (0, 165, 255)
+                elif self.LRMclick == 'R':
+                    arrow_color = (255, 165, 0)
 
-            robot_ix = (robot_front_i[0]+robot_back_i[0])/2
-            robot_iy = (robot_front_i[1]+robot_back_i[1])/2
+                cv2.arrowedLine(img2,                                # 矢印
+                    pt1=(int(robot_ix), int(robot_iy)),
+                    pt2=(int(self.target_i[0]), int(self.target_i[1])),
+                    color=arrow_color,
+                    thickness=3,
+                    line_type=cv2.LINE_4,
+                    shift=0,
+                    tipLength=0.1)
+                
+                cv2.imshow("camera1",img2)
             
-            arrow_color = ()
-            if self.LRMclick == 'L':
-                arrow_color = (0, 165, 255)
-            elif self.LRMclick == 'R':
-                arrow_color = (255, 165, 0)
-
-            cv2.arrowedLine(img2,                                # 矢印
-                pt1=(int(robot_ix), int(robot_iy)),
-                pt2=(int(self.target_i[0]), int(self.target_i[1])),
-                color=arrow_color,
-                thickness=3,
-                line_type=cv2.LINE_4,
-                shift=0,
-                tipLength=0.1)
-            
-            cv2.imshow("camera1",img2)
-            
-            return True,angle,distance,self.LRMclick
+                return True,angle,distance,self.LRMclick
+        else:
+            self.ret_robot = False
         return False,None,None,None
 
 
@@ -452,9 +474,10 @@ def main():
 
     cv2.setMouseCallback('camera1', es.onMouse)         # 1カメの画像に対するクリックイベント
     
-    talker_num = 0
 
+    rospy.init_node('Space')
     while True:
+        talker_num = 0
         ret, frame1 = cap1.read()           #カメラからの画像取得
         img_axes = frame1.copy()
         img_axes = draw(img_axes,corners12,imgpts)
@@ -482,9 +505,8 @@ def main():
                 talker_num = 0
 
         try:
-            talker(talker_num)               # 前進
+            es.talker(talker_num)
         except rospy.ROSInterruptException: pass
-
             
         #繰り返し分から抜けるためのif文
         key =cv2.waitKey(1)
@@ -492,7 +514,6 @@ def main():
             cap1.release()
             cv2.destroyAllWindows()
             break
-
 
 if __name__ == "__main__":
     main()
