@@ -155,9 +155,9 @@ class Estimation:
 
         self.depmtx = np.array([610.438, 0, 321.61958462, 
                                 0, 610.827, 250.53954371, 
-                                0, 0, 1]).reshape(3,3)        # RealSenseの内部パラメータ
-        self.depdist = np.array([0.06582571, 0.24423383, 0.00201921, 0.00146058, -1.27553243])                              # RealSenseの歪み係数
-        self.depf = (self.depmtx[0][0]+self.depmtx[1][1])/2     # RealSenseの焦点距離
+                                0, 0, 1]).reshape(3,3)                                                          # RealSenseの内部パラメータ
+        self.depdist = np.array([0.06582571, 0.24423383, 0.00201921, 0.00146058, -1.27553243])                  # RealSenseの歪み係数
+        #self.depf = (self.depmtx[0][0]+self.depmtx[1][1])/2     # RealSenseの焦点距離
 
 
         # ROS関連
@@ -190,12 +190,12 @@ class Estimation:
 
     def getHeight(self,y,d):
         v = y-self.depmtx[1][2]
-        h = -(v*d)/self.depf
+        h = -(v*d)/self.depmtx[1][1]
         return h
 
     def getWidth(self,x,d):
         u = x-self.depmtx[0][2]
-        w = (u*d)/self.depf
+        w = (u*d)/self.depmtx[0][0]
         return w
 
     def talker(self, num):
