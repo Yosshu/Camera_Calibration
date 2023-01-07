@@ -113,6 +113,22 @@ def tangent_angle(u: np.ndarray, v: np.ndarray):        # 2つのベクトルの
     return output
 
 
+def isint(s):  # 整数値を表しているかどうかを判定
+    try:
+        int(s, 10)  # 文字列を実際にint関数で変換してみる
+    except ValueError:
+        return False  # 例外が発生＝変換できないのでFalseを返す
+    else:
+        return True  # 変換できたのでTrueを返す
+
+def isfloat(s):  # 浮動小数点数値を表しているかどうかを判定
+    try:
+        float(s)  # 文字列を実際にfloat関数で変換してみる
+    except ValueError:
+        return False  # 例外が発生＝変換できないのでFalseを返す
+    else:
+        return True  # 変換できたのでTrueを返す
+
 
 
 class Estimation:
@@ -151,6 +167,8 @@ class Estimation:
         self.robot_w = []
         self.robot_vector = []
         self.ret_robot = False
+        self.input_angle = 0
+        self.robotcam_height = 28.5
 
 
         self.depmtx = np.array([610.438, 0, 321.61958462, 
@@ -185,7 +203,7 @@ class Estimation:
             widthX = -width*robot_sin
             widthY = -width*robot_cos
 
-            print(f'{[round(obj_w_x+widthX,3), round(obj_w_y+widthY,3), round(28.5+height,3)]} [cm]')
+            print(f'{[round(obj_w_x+widthX,3), round(obj_w_y+widthY,3), round(self.robotcam_height+height,3)]} [cm]')
 
 
     def getHeight(self,y,d):
@@ -199,20 +217,35 @@ class Estimation:
         return w
 
     def talker(self, num):
-        #rospy.loginfo(num)
+        rospy.loginfo(num)
         self.pub.publish(num)
 
 
 
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
         if event == cv2.EVENT_LBUTTONDOWN:      # 左クリック
-            self.target_i = [x,y]
-            self.target_w = self.pointFixZ(x,y,0.5)
+            point_wx = input("Xw: ")
+            point_wy = input("Yw: ")
+            if isfloat(point_wx) and isfloat(point_wy):
+                point_wx = float(point_wx)/50
+                point_wy = float(point_wy)/50
+                self.target_w = [point_wx,point_wy,0.5]
+                pointw = np.float32([point_wx,point_wy,-0.5]).reshape(-1,3)
+                pointi, _ = cv2.projectPoints(pointw, self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
+                self.target_i = [pointi[0][0][0],pointi[0][0][1]]
+            else:
+                self.target_i = [x,y]
+                self.target_w = self.pointFixZ(x,y,0.5)
             self.LRMclick = 'L'
         elif event == cv2.EVENT_RBUTTONDOWN:    # 右クリック
-            self.target_i = [x,y]
-            self.target_w = self.pointFixZ(x,y,0.5)
-            self.LRMclick = 'R'
+            angle = input("angle: ")
+            if isfloat(angle):
+                self.input_angle = math.radians(float(angle))
+                self.LRMclick = 'R'
+            else:
+                self.target_i = [x,y]
+                self.target_w = self.pointFixZ(x,y,0.5)
+                self.LRMclick = 'R2'
         elif event == cv2.EVENT_MBUTTONDOWN:    # 中クリック
             res = self.pointFixZ(x,y,0)
             res = [round(n*self.scale,3) for n in res]
@@ -277,7 +310,7 @@ class Estimation:
     def line_update(self, img):        # エピポーラ線やクリックした点を描画する関数
         if self.LRMclick == 'L':
             img = cv2.circle(img, (int(self.target_i[0]),int(self.target_i[1])), 2, (0, 165, 255), thickness=-1)          # 左クリックした点を描画
-        elif self.LRMclick == 'R':
+        elif self.LRMclick == 'R2':
             img = cv2.circle(img, (int(self.target_i[0]),int(self.target_i[1])), 2, (255, 165, 0), thickness=-1)          # 右クリックした点を描画
         elif self.LRMclick == 'M':
             img = cv2.circle(img, (int(self.obj1_i1x),int(self.obj1_i1y)), 2, (255,0,255), thickness=-1)          # 中クリックした点を描画
@@ -340,19 +373,19 @@ class Estimation:
             robot_wy = (robot_front_w[1]+robot_back_w[1])/2                  # ロボットのワールド座標のYw
             self.robot_w = [robot_wx,robot_wy,0.5]
             robot_w_xy = np.array([robot_wx,robot_wy])          # ロボットのワールド座標のXw,Yw
-            if (self.LRMclick == 'L' or self.LRMclick == 'R'):                                              # 左クリックか右クリックしていたら
+
+            robot_ix = (robot_front_i[0]+robot_back_i[0])/2
+            robot_iy = (robot_front_i[1]+robot_back_i[1])/2
+            if (self.LRMclick == 'L' or self.LRMclick == 'R2'):                                              # 左クリックか右クリックしていたら
                 target_w_xy = np.array([self.target_w[0],self.target_w[1]]) # 目標位置のワールド座標のXw,Yw
                 target_vector = np.array(target_w_xy - robot_w_xy)  # 目的方向のベクトル
                 angle = tangent_angle(self.robot_vector,target_vector)   # ロボットの向きと目標方向の角度差
                 distance = math.sqrt((target_w_xy[0]-robot_w_xy[0])**2 + (target_w_xy[1]-robot_w_xy[1])**2)     # ロボットと目標位置の距離
 
-                robot_ix = (robot_front_i[0]+robot_back_i[0])/2
-                robot_iy = (robot_front_i[1]+robot_back_i[1])/2
-
                 arrow_color = ()
                 if self.LRMclick == 'L':
                     arrow_color = (0, 165, 255)
-                elif self.LRMclick == 'R':
+                elif self.LRMclick == 'R2':
                     arrow_color = (255, 165, 0)
 
                 cv2.arrowedLine(img2,                                # 矢印
@@ -367,6 +400,28 @@ class Estimation:
                 cv2.imshow("camera1",img2)
             
                 return True,angle,distance,self.LRMclick
+            elif self.LRMclick == 'R':
+                horizontal_line = [1,0]
+                target_vector_x = horizontal_line[0] * math.cos(self.input_angle) - horizontal_line[1] * math.sin(self.input_angle)
+                target_vector_y = horizontal_line[0] * math.sin(self.input_angle) + horizontal_line[1] * math.cos(self.input_angle)
+                target_vector = [target_vector_x, target_vector_y]
+                angle = tangent_angle(self.robot_vector,target_vector)   # ロボットの向きと目標方向の角度差
+                print([-robot_ix+target_vector_x,-robot_iy+target_vector_y,-0.5])
+
+                target_w = np.float32([robot_wx+target_vector_x,robot_wy+target_vector_y,-0.5]).reshape(-1,3)
+                target_i, _ = cv2.projectPoints(target_w, self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
+                self.target_i = [target_i[0][0][0],target_i[0][0][1]]
+                cv2.arrowedLine(img2,                                # 矢印
+                    pt1=(int(robot_ix), int(robot_iy)),
+                    pt2=(int(self.target_i[0]), int(self.target_i[1])),
+                    color=(255, 165, 0),
+                    thickness=3,
+                    line_type=cv2.LINE_4,
+                    shift=0,
+                    tipLength=0.1)
+                cv2.imshow("camera1",img2)
+
+                return True,angle,None,self.LRMclick
         else:
             self.ret_robot = False
         return False,None,None,None
@@ -523,7 +578,7 @@ def main():
                             talker_num = 3               # 前進
                         else:                           # 目的地に到着したら
                             talker_num = 0               # 停止
-                    elif LRM == 'R':                # 右クリックしていたら
+                    elif LRM == 'R' or 'R2':                # 右クリックしていたら
                         talker_num = 0
                 elif 10 < angle:
                     talker_num = 1
