@@ -186,8 +186,8 @@ class Estimation:
     def callback(self,data):
         if self.ret_robot:
             datadata = data.data
-            depx = datadata[0]
-            depy = datadata[1]
+            depu = datadata[0]
+            depv = datadata[1]
             depth = datadata[2]
 
             #print(f'{depth} cm')
@@ -197,23 +197,23 @@ class Estimation:
             obj_w_x = (self.robot_w[0]*self.scale) + (depth * robot_cos)
             obj_w_y = (self.robot_w[1]*self.scale) + (depth * robot_sin)
 
-            height = self.getHeight(depy,depth)
+            height = self.getHeight(depv,depth)
 
-            width = self.getWidth(depx,depth)
+            width = self.getWidth(depu,depth)
             widthX = -width*robot_sin
-            widthY = -width*robot_cos
+            widthY = width*robot_cos
 
-            print(f'{[round(obj_w_x+widthX,3), round(obj_w_y+widthY,3), round(self.robotcam_height+height,3)]} [cm]')
+            print(f'{[round(obj_w_x+widthX,3), round(obj_w_y-widthY,3), round(self.robotcam_height+height,3)]} [cm]')
 
 
-    def getHeight(self,y,d):
-        v = y-self.depmtx[1][2]
-        h = -(v*d)/self.depmtx[1][1]
+    def getHeight(self,v,d):
+        y = self.depmtx[1][2]-v
+        h = (y*d)/self.depmtx[1][1]
         return h
 
-    def getWidth(self,x,d):
-        u = x-self.depmtx[0][2]
-        w = (u*d)/self.depmtx[0][0]
+    def getWidth(self,u,d):
+        x = u-self.depmtx[0][2]
+        w = (x*d)/self.depmtx[0][0]
         return w
 
     def talker(self, num):
@@ -224,8 +224,9 @@ class Estimation:
 
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
         if event == cv2.EVENT_LBUTTONDOWN:      # 左クリック
-            point_wx = input("Xw: ")
-            point_wy = input("Yw: ")
+            point_wx = input("Xw = ")
+            point_wy = input("Yw = ")
+            print()
             if isfloat(point_wx) and isfloat(point_wy):
                 point_wx = float(point_wx)/50
                 point_wy = float(point_wy)/50
@@ -572,7 +573,7 @@ def main():
             retd, angle, distance, LRM = es.angleDiff(frame1,img_axes,dictionary,parameters)
             if retd:
                 #print(angle)
-                if -10 <= angle <= 10:          # 目的方向を向いていたら
+                if -10 < angle < 10:          # 目的方向を向いていたら
                     if LRM == 'L':                  # 左クリックしていたら
                         if distance > 0.4:              # 目的地から離れていたら
                             talker_num = 3               # 前進
@@ -580,9 +581,9 @@ def main():
                             talker_num = 0               # 停止
                     elif LRM == 'R' or 'R2':                # 右クリックしていたら
                         talker_num = 0
-                elif 10 < angle:
+                elif 10 <= angle:
                     talker_num = 1
-                elif angle < -10:
+                elif angle <= -10:
                     talker_num = 2
             elif retd == False:
                 talker_num = 0
