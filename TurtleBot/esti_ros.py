@@ -207,7 +207,7 @@ class Estimation:
             widthX = width*robot_sin
             widthY = width*robot_cos
 
-            print(f'{[round(obj_w_x+widthX,3), round(obj_w_y+widthY,3), round(self.robotcam_height+height,3)]} [cm]')
+            print(f'{[round(obj_w_x+widthX,3), round(obj_w_y-widthY,3), round(self.robotcam_height+height,3)]} [cm]')
 
 
     def getHeight(self,v,d):
