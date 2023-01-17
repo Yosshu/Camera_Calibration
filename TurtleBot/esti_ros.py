@@ -67,7 +67,7 @@ def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心�
     contours = cv2.findContours(img_mask_bin, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[0]
 
     # 面積が一定以上の輪郭のみ残す。
-    area_thresh = 350
+    area_thresh = 105
     contours = list(filter(lambda x: cv2.contourArea(x) > area_thresh, contours))
     ret = False
     center = 0
@@ -168,7 +168,11 @@ class Estimation:
         self.robot_vector = []
         self.ret_robot = False
         self.input_angle = 0
-        self.robotcam_height = 28.5
+        self.robotcam_height = 22.5
+        self.robotcam_len = 16
+        
+        self.click = 0
+        self.widthy = 1
 
 
         self.depmtx = np.array([610.438, 0, 321.61958462, 
@@ -191,19 +195,19 @@ class Estimation:
             depth = datadata[2]
 
             #print(f'{depth} cm')
-            robot_dirction = np.arctan2(self.robot_vector[1],self.robot_vector[0])
-            robot_cos = math.cos(robot_dirction)
-            robot_sin = math.sin(robot_dirction)
-            obj_w_x = (self.robot_w[0]*self.scale) + (depth * robot_cos)
-            obj_w_y = (self.robot_w[1]*self.scale) + (depth * robot_sin)
+            robot_direction = np.arctan2(self.robot_vector[1],self.robot_vector[0])
+            robot_cos = math.cos(robot_direction)
+            robot_sin = math.sin(robot_direction)
+            obj_w_x = (self.robot_w[0]*self.scale) + ((depth+self.robotcam_len) * robot_cos)
+            obj_w_y = (self.robot_w[1]*self.scale) + ((depth+self.robotcam_len) * robot_sin)
 
             height = self.getHeight(depv,depth)
 
             width = self.getWidth(depu,depth)
-            widthX = -width*robot_sin
+            widthX = width*robot_sin
             widthY = width*robot_cos
 
-            print(f'{[round(obj_w_x+widthX,3), round(obj_w_y-widthY,3), round(self.robotcam_height+height,3)]} [cm]')
+            print(f'{[round(obj_w_x+widthX,3), round(obj_w_y+widthY,3), round(self.robotcam_height+height,3)]} [cm]')
 
 
     def getHeight(self,v,d):
@@ -212,48 +216,56 @@ class Estimation:
         return h
 
     def getWidth(self,u,d):
-        x = u-self.depmtx[0][2]
+        x = self.depmtx[0][2]-u
         w = (x*d)/self.depmtx[0][0]
         return w
 
     def talker(self, num):
-        rospy.loginfo(num)
+        #rospy.loginfo(num)
         self.pub.publish(num)
 
 
 
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
-        if event == cv2.EVENT_LBUTTONDOWN:      # 左クリック
-            point_wx = input("Xw = ")
-            point_wy = input("Yw = ")
-            print()
-            if isfloat(point_wx) and isfloat(point_wy):
-                point_wx = float(point_wx)/50
-                point_wy = float(point_wy)/50
-                self.target_w = [point_wx,point_wy,0.5]
-                pointw = np.float32([point_wx,point_wy,-0.5]).reshape(-1,3)
-                pointi, _ = cv2.projectPoints(pointw, self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
-                self.target_i = [pointi[0][0][0],pointi[0][0][1]]
-            else:
-                self.target_i = [x,y]
-                self.target_w = self.pointFixZ(x,y,0.5)
-            self.LRMclick = 'L'
-        elif event == cv2.EVENT_RBUTTONDOWN:    # 右クリック
-            angle = input("angle: ")
-            if isfloat(angle):
-                self.input_angle = math.radians(float(angle))
-                self.LRMclick = 'R'
-            else:
-                self.target_i = [x,y]
-                self.target_w = self.pointFixZ(x,y,0.5)
-                self.LRMclick = 'R2'
-        elif event == cv2.EVENT_MBUTTONDOWN:    # 中クリック
-            res = self.pointFixZ(x,y,0)
-            res = [round(n*self.scale,3) for n in res]
-            print(f"{res} [cm]")
-            self.obj1_i1x = x
-            self.obj1_i1y = y
-            self.LRMclick = 'M'
+        if self.click == 0:
+            if event == cv2.EVENT_LBUTTONDOWN:      # 左クリック
+                self.click = 1
+                point_wx = input("Xw = ")
+                point_wy = input("Yw = ")
+                print()
+                if isfloat(point_wx) and isfloat(point_wy):
+                    point_wx = float(point_wx)/50
+                    point_wy = float(point_wy)/50
+                    self.target_w = [point_wx,point_wy,0.5]
+                    pointw = np.float32([point_wx,point_wy,-0.5]).reshape(-1,3)
+                    pointi, _ = cv2.projectPoints(pointw, self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
+                    self.target_i = [pointi[0][0][0],pointi[0][0][1]]
+                else:
+                    self.target_i = [x,y]
+                    self.target_w = self.pointFixZ(x,y,0.5)
+                self.LRMclick = 'L'
+                self.click = 0
+            elif event == cv2.EVENT_RBUTTONDOWN:    # 右クリック
+                self.click = 1
+                angle = input("angle: ")
+                print()
+                if isfloat(angle):
+                    self.input_angle = math.radians(float(angle))
+                    self.LRMclick = 'R'
+                else:
+                    self.target_i = [x,y]
+                    self.target_w = self.pointFixZ(x,y,0.5)
+                    self.LRMclick = 'R2'
+                self.click = 0
+            elif event == cv2.EVENT_MBUTTONDOWN:    # 中クリック
+                self.click = 1
+                res = self.pointFixZ(x,y,0)
+                res = [round(n*self.scale,3) for n in res]
+                print(f"{res} [cm]")
+                self.obj1_i1x = x
+                self.obj1_i1y = y
+                self.LRMclick = 'M'
+                self.click = 0
 
 
     def line_SEpoint(self, x, y, num):      # 始点（カメラ）と終点（正規化画像座標）のワールド座標を求める関数，numは1カメか2カメか
@@ -360,11 +372,23 @@ class Estimation:
     """
 
     def angleDiff(self,img,img2,dictionary,parameters):        # ロボットの向きと目標方向の角度差，ロボットと目標位置の距離，左クリックしたのか右クリックしたのかを返す関数
-        corners, ids, _ = aruco.detectMarkers(img, dictionary, parameters=parameters)
-        if corners:                                                                                             # ロボットが見つかったら
+        #corners, ids, _ = aruco.detectMarkers(img, dictionary, parameters=parameters)
+        ret1,reds_i= findSquare(img,57,67,255)       # 赤パネルの画像座標
+        ret2,greens_i = findSquare(img,98,142,53)    # 緑パネルの画像座標
+        ret3 = ret1 and ret2
+        robot_front_i,robot_back_i = nearest(ret3,reds_i,greens_i)
+        ret4 = False
+        if ret3:
+            if np.linalg.norm(robot_front_i-robot_back_i) < 50:
+                ret4 = True
+            else:
+                ret4 = False
+
+
+        if ret4:                                                                                             # ロボットが見つかったら
             self.ret_robot = True
-            robot_front_i = [(corners[0][0][0][0]+corners[0][0][1][0])/2,(corners[0][0][0][1]+corners[0][0][1][1])/2]
-            robot_back_i  = [(corners[0][0][2][0]+corners[0][0][3][0])/2,(corners[0][0][2][1]+corners[0][0][3][1])/2]
+            #robot_front_i = [(corners[0][0][0][0]+corners[0][0][1][0])/2,(corners[0][0][0][1]+corners[0][0][1][1])/2]
+            #robot_back_i  = [(corners[0][0][2][0]+corners[0][0][3][0])/2,(corners[0][0][2][1]+corners[0][0][3][1])/2]
             robot_front_w = self.pointFixZ(robot_front_i[0],robot_front_i[1],0.5)       # 赤パネルのワールド座標
             robot_front_w_xy = np.array([robot_front_w[0],robot_front_w[1]])            # 赤パネルのワールド座標のXw,Yw
             robot_back_w = self.pointFixZ(robot_back_i[0],robot_back_i[1],0.5) # 緑パネルのワールド座標
@@ -407,7 +431,7 @@ class Estimation:
                 target_vector_y = horizontal_line[0] * math.sin(self.input_angle) + horizontal_line[1] * math.cos(self.input_angle)
                 target_vector = [target_vector_x, target_vector_y]
                 angle = tangent_angle(self.robot_vector,target_vector)   # ロボットの向きと目標方向の角度差
-                print([-robot_ix+target_vector_x,-robot_iy+target_vector_y,-0.5])
+                #print([-robot_ix+target_vector_x,-robot_iy+target_vector_y,-0.5])
 
                 target_w = np.float32([robot_wx+target_vector_x,robot_wy+target_vector_y,-0.5]).reshape(-1,3)
                 target_i, _ = cv2.projectPoints(target_w, self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
@@ -517,7 +541,7 @@ def main():
         _, frame1 = cap1.read()           #カメラからの画像取得
         gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
         cv2.imshow('camera1' , frame1)
-        corners = np.array([143, 163, 214, 163, 289, 163, 365, 164, 441, 166, 513, 167, 125, 212, 202, 212, 284, 212, 368, 215, 451, 215, 530, 216, 106, 269, 189, 271, 278, 273, 371, 274, 462, 275, 547, 273, 85, 336, 174, 342, 272, 346, 373, 347, 474, 346, 566, 343, 64, 415, 159, 425, 265, 431, 377, 433, 486, 431, 586, 423],dtype='float32').reshape(-1,1,2)
+        corners = np.array([185, 176, 258, 177, 331, 177, 409, 179, 483, 180, 555, 183, 168, 224, 245, 226, 326, 227, 411, 228, 492, 230, 570, 231, 148, 282, 231, 284, 321, 287, 412, 288, 502, 289, 586, 289, 127, 348, 216, 355, 314, 359, 415, 362, 515, 361, 602, 358, 103, 426, 199, 437, 305, 444, 416, 447, 523, 444, 621, 437],dtype='float32').reshape(-1,1,2)
         corners12 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
         imgpoints.append(corners12)
 
@@ -558,6 +582,8 @@ def main():
 
     cv2.setMouseCallback('camera1', es.onMouse)         # 1カメの画像に対するクリックイベント
     
+    angle_st = 5
+    distance_st = 0.1
 
     rospy.init_node('Space')
     while True:
@@ -573,17 +599,17 @@ def main():
             retd, angle, distance, LRM = es.angleDiff(frame1,img_axes,dictionary,parameters)
             if retd:
                 #print(angle)
-                if -10 < angle < 10:          # 目的方向を向いていたら
+                if -angle_st < angle < angle_st:          # 目的方向を向いていたら
                     if LRM == 'L':                  # 左クリックしていたら
-                        if distance > 0.4:              # 目的地から離れていたら
+                        if distance > distance_st:              # 目的地から離れていたら
                             talker_num = 3               # 前進
                         else:                           # 目的地に到着したら
                             talker_num = 0               # 停止
                     elif LRM == 'R' or 'R2':                # 右クリックしていたら
                         talker_num = 0
-                elif 10 <= angle:
+                elif angle_st <= angle:
                     talker_num = 1
-                elif angle <= -10:
+                elif angle <= -angle_st:
                     talker_num = 2
             elif retd == False:
                 talker_num = 0
