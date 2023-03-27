@@ -207,7 +207,7 @@ class Estimation:
             widthX = width*robot_sin
             widthY = width*robot_cos
 
-            print(f'{[round(obj_w_x+widthX,3), round(obj_w_y-widthY,3), round(self.robotcam_height+height,3)]} [cm]')
+            print(f'{[round(obj_w_x+widthX,2), round(obj_w_y-widthY,2), round(self.robotcam_height+height,2)]} [cm]')
 
 
     def getHeight(self,v,d):
@@ -230,6 +230,7 @@ class Estimation:
         if self.click == 0:
             if event == cv2.EVENT_LBUTTONDOWN:      # 左クリック
                 self.click = 1
+                """
                 point_wx = input("Xw = ")
                 point_wy = input("Yw = ")
                 print()
@@ -240,27 +241,28 @@ class Estimation:
                     pointw = np.float32([point_wx,point_wy,-0.5]).reshape(-1,3)
                     pointi, _ = cv2.projectPoints(pointw, self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
                     self.target_i = [pointi[0][0][0],pointi[0][0][1]]
-                else:
-                    self.target_i = [x,y]
-                    self.target_w = self.pointFixZ(x,y,0.5)
+                else:"""
+                self.target_i = [x,y]
+                self.target_w = self.pointFixZ(x,y,0.5)
                 self.LRMclick = 'L'
                 self.click = 0
             elif event == cv2.EVENT_RBUTTONDOWN:    # 右クリック
                 self.click = 1
+                """
                 angle = input("angle: ")
                 print()
                 if isfloat(angle):
                     self.input_angle = math.radians(float(angle))
                     self.LRMclick = 'R'
-                else:
-                    self.target_i = [x,y]
-                    self.target_w = self.pointFixZ(x,y,0.5)
-                    self.LRMclick = 'R2'
+                else:"""
+                self.target_i = [x,y]
+                self.target_w = self.pointFixZ(x,y,0.5)
+                self.LRMclick = 'R2'
                 self.click = 0
             elif event == cv2.EVENT_MBUTTONDOWN:    # 中クリック
                 self.click = 1
                 res = self.pointFixZ(x,y,0)
-                res = [round(n*self.scale,3) for n in res]
+                res = [round(n*self.scale,2) for n in res]
                 print(f"{res} [cm]")
                 self.obj1_i1x = x
                 self.obj1_i1y = y
@@ -479,71 +481,14 @@ def main():
 
     cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
 
-    val = None
-    while True:
-        val = input('Checkerboard or Prepared value? (C/P)')        # チェッカーボードを使うか用意した値を使うかを指定する
-        if val == "c" or val == "C" or val == "p" or val == "P":    # CかPでなければ何度も聞く
-            break
 
-    if val == "c" or val == "C":            # チェッカーボードを使う場合
-        img_axes0 = []
-        imgpts0 = []
-        corners02 = []
 
-        ret01 = False
-        
-        while True:
-            _, frame1 = cap1.read()           #カメラからの画像取得
-            frame1 = cv2.resize(frame1,dsize=(frame1.shape[1]*2,frame1.shape[0]*2))
-
-            if ret01 == True:
-                img_axes0 = frame1.copy()
-                img_axes0 = draw(img_axes0,corners02,imgpts0)
-                cv2.imshow('camera1' , img_axes0)
-            else:
-                cv2.imshow('camera1' , frame1)
-            
-            #繰り返し分から抜けるためのif文
-            key =cv2.waitKey(1)
-            if key == ord('s'):
-                gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
-                _, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
-                # Find the chess board corners　交点を見つける
-                ret, corners = cv2.findChessboardCorners(img_otsu, (yoko,tate),None)
-                if ret == True:
-                    print("OK")
-                    break
-                elif ret == False:
-                    print("Fail")
-            elif key == ord('a'):
-                ret01, corners02, imgpts0 = axes_check(frame1, tate, yoko, objp, criteria, axis)
-            elif key == 27:   #Escで終了
-                break
-        
-        #cv2.imwrite('1.png',frame1)
-
-        """
-        frame1 = cv2.imread("1.png")
-        cv2.imshow('camera1',frame1)
-        """  
-        
-        gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
-        ret, img_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
-
-        # Find the chess board corners　交点を見つける
-        #cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE + cv2.CALIB_CB_FILTER_QUADS + cv2.CALIB_CB_FAST_CHECK
-        ret, corners = cv2.findChessboardCorners(img_otsu, (yoko,tate), None)
-        # If found, add object points, image points (after refining them)　交点が見つかったなら、描画
-        corners12 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
-        imgpoints.append(corners12)
-
-    elif val == "p" or val == "P":          # 用意した値を使う場合
-        _, frame1 = cap1.read()           #カメラからの画像取得
-        gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
-        cv2.imshow('camera1' , frame1)
-        corners = np.array([185, 176, 258, 177, 331, 177, 409, 179, 483, 180, 555, 183, 168, 224, 245, 226, 326, 227, 411, 228, 492, 230, 570, 231, 148, 282, 231, 284, 321, 287, 412, 288, 502, 289, 586, 289, 127, 348, 216, 355, 314, 359, 415, 362, 515, 361, 602, 358, 103, 426, 199, 437, 305, 444, 416, 447, 523, 444, 621, 437],dtype='float32').reshape(-1,1,2)
-        corners12 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
-        imgpoints.append(corners12)
+    _, frame1 = cap1.read()           #カメラからの画像取得
+    gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
+    cv2.imshow('camera1' , frame1)
+    corners = np.array([138, 178, 209, 179, 283, 180, 359, 183, 434, 185, 506, 188, 121, 226, 196, 228, 278, 230, 361, 233, 444, 235, 522, 236, 100, 283, 182, 287, 272, 290, 364, 292, 454, 294, 538, 294, 79, 350, 167, 358, 265, 363, 366, 365, 465, 365, 556, 363, 57, 426, 152, 439, 257, 447, 368, 451, 475, 449, 575, 442],dtype='float32').reshape(-1,1,2)
+    corners12 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
+    imgpoints.append(corners12)
 
     objpoints.append(objp)      # object point
 
