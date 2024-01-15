@@ -5,7 +5,6 @@ from std_msgs.msg import Int16MultiArray
 
 import numpy as np
 import cv2
-aruco = cv2.aruco
 import glob
 import pyautogui
 import copy
@@ -48,15 +47,18 @@ def drawpoints(img, points,b,g,r):
     return img
 
 
-def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心の画像座標を取得する関数
+def findSquare(img, bgr):                  # 指定したBGRの輪郭の中心の画像座標を取得する関数
+    b = int(bgr[0])
+    g = int(bgr[1])
+    r = int(bgr[2])
     hsv = colorsys.rgb_to_hsv(r/255, g/255, b/255)
     h = int(hsv[0]*180)
     s = int(hsv[1]*255)
     v = int(hsv[2]*255)
     img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     
-    lower_color = np.array([h-25, s-60, v-120]) 
-    upper_color = np.array([h+25, s+60, v+120]) 
+    lower_color = np.array([h-10, s-60, v-120]) 
+    upper_color = np.array([h+10, s+60, v+120]) 
 
     mask = cv2.inRange(img_hsv, lower_color, upper_color) 
     img_mask = cv2.bitwise_and(img, img, mask = mask)
@@ -67,7 +69,7 @@ def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心�
     contours = cv2.findContours(img_mask_bin, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[0]
 
     # 面積が一定以上の輪郭のみ残す。
-    area_thresh = 105
+    area_thresh = 100
     contours = list(filter(lambda x: cv2.contourArea(x) > area_thresh, contours))
     ret = False
     center = 0
@@ -80,13 +82,12 @@ def findSquare(img,b,g,r):                  # 指定したBGRの輪郭の中心�
         centers.append(center)
         # 描画する。
         cv2.rectangle(img, (x, y), (x + width, y + height), color=(255, g, r), thickness=2)
-        #cv2.imshow('img_square',img)
         ret = True
     centers = np.array(centers).reshape(-1,2)
-    return ret,centers
+    return ret, centers
 
 
-def nearest(ret,a,b):
+def nearest(ret,a,b, du, dv):           # 赤と緑のペア探し
     if ret:
         na, nb = len(a), len(b)
         ## Combinations of a and b
@@ -96,7 +97,10 @@ def nearest(ret,a,b):
         ## Sort with distance
         l.sort(key=lambda x: x[0])
         _, ia, ib = l[0]
-        return a[ia], b[ib]
+        # 求めた座標にdu, dvを足す
+        res_a = a[ia] + np.array([du, dv])
+        res_b = b[ib] + np.array([du, dv])
+        return res_a, res_b 
     return None,None
 
 def tangent_angle(u: np.ndarray, v: np.ndarray):        # 2つのベクトルのなす角を求める関数
@@ -164,6 +168,9 @@ class Estimation:
 
         self.scale = 50      # 1マス50cm
 
+        self.robot_front_i = []
+        self.robot_back_i = []
+
         self.robot_w = []
         self.robot_vector = []
         self.ret_robot = False
@@ -173,6 +180,17 @@ class Estimation:
         
         self.click = 0
         self.widthy = 1
+
+        self.current_img = []
+        self.RorG = "R"
+        self.chosen_R_i = []
+        self.chosen_G_i = []
+        self.R_panel_color = []
+        self.G_panel_color = []
+        self.robot_approx_loc = []
+
+        self.RANGE_RADIUS = 140
+
 
 
         self.depmtx = np.array([610.438, 0, 321.61958462, 
@@ -259,7 +277,7 @@ class Estimation:
                 self.target_w = self.pointFixZ(x,y,0.5)
                 self.LRMclick = 'R2'
                 self.click = 0
-            elif event == cv2.EVENT_MBUTTONDOWN:    # 中クリック
+                """elif event == cv2.EVENT_MBUTTONDOWN:    # 中クリック
                 self.click = 1
                 res = self.pointFixZ(x,y,0)
                 res = [round(n*self.scale,2) for n in res]
@@ -267,8 +285,40 @@ class Estimation:
                 self.obj1_i1x = x
                 self.obj1_i1y = y
                 self.LRMclick = 'M'
+                self.click = 0"""
+            elif event == cv2.EVENT_MBUTTONDOWN:    # 中クリック
+                self.click = 1
+                if self.RorG == "R":
+                    self.chosen_R_i = [x,y]
+                    self.R_panel_color = list(self.current_img[y, x])
+                    self.RorG = "G"
+                elif self.RorG == "G":
+                    self.chosen_G_i = [x,y]
+                    self.G_panel_color = list(self.current_img[y, x])
+                    self.RorG = "R"
                 self.click = 0
 
+
+                
+    def find_robot_approx_loc(self):
+        if self.chosen_R_i and self.chosen_G_i:
+            if not self.robot_approx_loc:               # 赤緑を決めた最初
+                self.middle_dot = [(self.chosen_R_i[0]+self.chosen_G_i[0])/2, (self.chosen_R_i[1]+self.chosen_G_i[1])/2]
+            else:                                           # その後
+                if self.robot_front_i is not None and self.robot_back_i is not None:        # ロボットが見つかっている場合
+                    self.middle_dot = [(self.robot_front_i[0]+self.robot_back_i[0])/2, (self.robot_front_i[1]+self.robot_back_i[1])/2]
+            range_u1 = self.middle_dot[0]-self.RANGE_RADIUS
+            range_u2 = self.middle_dot[0]+self.RANGE_RADIUS
+            range_v1 = self.middle_dot[1]-self.RANGE_RADIUS
+            range_v2 = self.middle_dot[1]+self.RANGE_RADIUS
+            self.robot_approx_loc = [[int(range_u1), int(range_v1)], [int(range_u2), int(range_v2)]]
+
+
+    def crop_img_approx(self, img):
+        if not self.robot_approx_loc:
+            return img, [0, 0]
+        approx_img = img[self.robot_approx_loc[0][1]:self.robot_approx_loc[1][1], self.robot_approx_loc[0][0]:self.robot_approx_loc[1][0]]
+        return approx_img, self.robot_approx_loc[0]
 
     def line_SEpoint(self, x, y, num):      # 始点（カメラ）と終点（正規化画像座標）のワールド座標を求める関数，numは1カメか2カメか
         obj_i = [x,y]
@@ -373,27 +423,36 @@ class Estimation:
         return ret, self.target_i
     """
 
-    def angleDiff(self,img,img2,dictionary,parameters):        # ロボットの向きと目標方向の角度差，ロボットと目標位置の距離，左クリックしたのか右クリックしたのかを返す関数
-        #corners, ids, _ = aruco.detectMarkers(img, dictionary, parameters=parameters)
-        ret1,reds_i= findSquare(img,57,67,255)       # 赤パネルの画像座標
-        ret2,greens_i = findSquare(img,98,142,53)    # 緑パネルの画像座標
+    def angleDiff(self,img,img2):        # ロボットの向きと目標方向の角度差，ロボットと目標位置の距離，左クリックしたのか右クリックしたのかを返す関数
+        if not self.R_panel_color or not self.G_panel_color:
+            return False,None,None,None
+        approx_img, crop_pt1_i = self.crop_img_approx(img)
+        ret1,reds_i= findSquare(approx_img, self.R_panel_color)       # 赤パネルの画像座標
+        ret2,greens_i = findSquare(approx_img, self.G_panel_color)    # 緑パネルの画像座標
         ret3 = ret1 and ret2
-        robot_front_i,robot_back_i = nearest(ret3,reds_i,greens_i)
+        self.robot_front_i, self.robot_back_i = nearest(ret3, reds_i, greens_i, *crop_pt1_i)
+        self.find_robot_approx_loc()
+        if self.robot_approx_loc:
+            # 四角形を描画
+            img12 = img2.copy()
+            cv2.rectangle(img12, (int(self.robot_approx_loc[0][0]), int(self.robot_approx_loc[0][1])), (int(self.robot_approx_loc[1][0]), int(self.robot_approx_loc[1][1])), (0, 255, 255), thickness=2)
+            cv2.imshow("img12",img12)
+
+
         ret4 = False
         if ret3:
-            if np.linalg.norm(robot_front_i-robot_back_i) < 50:
+            if np.linalg.norm(self.robot_front_i-self.robot_back_i) < 50:
                 ret4 = True
             else:
                 ret4 = False
-
 
         if ret4:                                                                                             # ロボットが見つかったら
             self.ret_robot = True
             #robot_front_i = [(corners[0][0][0][0]+corners[0][0][1][0])/2,(corners[0][0][0][1]+corners[0][0][1][1])/2]
             #robot_back_i  = [(corners[0][0][2][0]+corners[0][0][3][0])/2,(corners[0][0][2][1]+corners[0][0][3][1])/2]
-            robot_front_w = self.pointFixZ(robot_front_i[0],robot_front_i[1],0.5)       # 赤パネルのワールド座標
+            robot_front_w = self.pointFixZ(self.robot_front_i[0],self.robot_front_i[1],0.5)       # 赤パネルのワールド座標
             robot_front_w_xy = np.array([robot_front_w[0],robot_front_w[1]])            # 赤パネルのワールド座標のXw,Yw
-            robot_back_w = self.pointFixZ(robot_back_i[0],robot_back_i[1],0.5) # 緑パネルのワールド座標
+            robot_back_w = self.pointFixZ(self.robot_back_i[0],self.robot_back_i[1],0.5) # 緑パネルのワールド座標
             robot_back_w_xy = np.array([robot_back_w[0],robot_back_w[1]])      # 緑パネルのワールド座標のXw,Yw
             self.robot_vector = np.array(robot_front_w_xy - robot_back_w_xy)      # ロボットの向きベクトル
             robot_wx = (robot_front_w[0]+robot_back_w[0])/2                  # ロボットのワールド座標のXw
@@ -401,8 +460,8 @@ class Estimation:
             self.robot_w = [robot_wx,robot_wy,0.5]
             robot_w_xy = np.array([robot_wx,robot_wy])          # ロボットのワールド座標のXw,Yw
 
-            robot_ix = (robot_front_i[0]+robot_back_i[0])/2
-            robot_iy = (robot_front_i[1]+robot_back_i[1])/2
+            robot_ix = (self.robot_front_i[0]+self.robot_back_i[0])/2
+            robot_iy = (self.robot_front_i[1]+self.robot_back_i[1])/2
             if (self.LRMclick == 'L' or self.LRMclick == 'R2'):                                              # 左クリックか右クリックしていたら
                 target_w_xy = np.array([self.target_w[0],self.target_w[1]]) # 目標位置のワールド座標のXw,Yw
                 target_vector = np.array(target_w_xy - robot_w_xy)  # 目的方向のベクトル
@@ -471,24 +530,17 @@ def main():
     imgpoints = [] # 2d points in image plane.
 
     # 軸の定義
-    axis = np.float32([[2,0,0], [0,2,0], [0,0,-2]]).reshape(-1,3)
-
-
-    dictionary = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
-    parameters =  aruco.DetectorParameters_create()
-    # CORNER_REFINE_NONE, no refinement. CORNER_REFINE_SUBPIX, do subpixel refinement. CORNER_REFINE_CONTOUR use contour-Points
-    parameters.cornerRefinementMethod = aruco.CORNER_REFINE_CONTOUR
+    axis = np.float32([[1,0,0], [0,1,0], [0,0,-1]]).reshape(-1,3)
 
     cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
-
-
+    # カメラの解像度を設定
+    cap1.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)  # 幅の設定
+    cap1.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)  # 高さの設定
 
     _, frame1 = cap1.read()           #カメラからの画像取得
     gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
     cv2.imshow('camera1' , frame1)
-    corners = np.array([138, 178, 209, 179, 283, 180, 359, 183, 434, 185, 506, 188, 121, 226, 196, 228, 278, 230, 361, 233, 444, 235, 522, 236, 100, 283, 182, 287, 272, 290, 364, 292, 454, 294, 538, 294, 79, 350, 167, 358, 265, 363, 366, 365, 465, 365, 556, 363, 57, 426, 152, 439, 257, 447, 368, 451, 475, 449, 575, 442],dtype='float32').reshape(-1,1,2)
-    corners12 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
-    imgpoints.append(corners12)
+
 
     objpoints.append(objp)      # object point
 
@@ -501,10 +553,12 @@ def main():
     """
     ret, mtx, dist, _, _ = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None,flags=cv2.CALIB_RATIONAL_MODEL) # _, _ は，rvecs, tvecs
     """
-    mtx = np.array([679.96806792, 0, 346.17428752, 0, 680.073095, 223.11864352, 0, 0, 1]).reshape(3,3)
-    # 640,480
+    mtx = np.array([1.01644397e+03, 0.00000000e+00, 6.87903319e+02, 0.00000000e+00, 1.01960682e+03, 3.37505807e+02, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]).reshape(3,3)
+    dist = np.array([-4.31940522e-01, 2.19409920e-01, -4.78545150e-05, 1.18269452e-03, -7.07910142e-02])
 
-    dist = np.array([-4.65322789e-01, 3.88192556e-01, -2.58061417e-03, -1.69216076e-04, -3.97886097e-01])
+    corners = np.array([389, 267, 494, 264, 604, 263, 718, 262, 831, 261, 937, 261, 364, 338, 478, 337, 599, 335, 723, 335, 846, 334, 961, 332, 336, 424, 460, 424, 592, 424, 729, 424, 863, 420, 984, 417, 309, 523, 440, 528, 585, 531, 736, 531, 882, 525, 1011, 521, 279, 639, 420, 651, 577, 658, 743, 656, 904, 651, 1044, 636],dtype='float32').reshape(-1,1,2)
+    corners12 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
+    imgpoints.append(corners12)
 
     _, rvecs, tvecs, _ = cv2.solvePnPRansac(objp, corners12, mtx, dist)
     rvecs = [rvecs]
@@ -534,6 +588,7 @@ def main():
     while True:
         talker_num = 0
         ret, frame1 = cap1.read()           #カメラからの画像取得
+        es.current_img = frame1.copy()
         img_axes = frame1.copy()
         img_axes = draw(img_axes,corners12,imgpts)
         #frame1 = cv2.resize(frame1,dsize=(frame1.shape[1]*2,frame1.shape[0]*2))
@@ -541,23 +596,26 @@ def main():
             img_axes = es.line_update(img_axes)
             cv2.imshow('camera1', img_axes)      #カメラの画像の出力
 
-            retd, angle, distance, LRM = es.angleDiff(frame1,img_axes,dictionary,parameters)
+            retd, angle, distance, LRM = es.angleDiff(frame1,img_axes)
+            
             if retd:
                 #print(angle)
-                if -angle_st < angle < angle_st:          # 目的方向を向いていたら
-                    if LRM == 'L':                  # 左クリックしていたら
-                        if distance > distance_st:              # 目的地から離れていたら
-                            talker_num = 3               # 前進
+                if -angle_st < angle < angle_st:        # 目的方向を向いていたら
+                    if LRM == 'L':                      # 左クリックしていたら
+                        if distance > distance_st:      # 目的地から離れていたら
+                            talker_num = 3              # 前進
                         else:                           # 目的地に到着したら
-                            talker_num = 0               # 停止
-                    elif LRM == 'R' or 'R2':                # 右クリックしていたら
-                        talker_num = 0
+                            talker_num = 0              # 停止
+                            es.LRMclick = None
+                    elif LRM == 'R' or 'R2':            # 右クリックしていたら
+                        talker_num = 0                  # 停止
+                        es.LRMclick = None
                 elif angle_st <= angle:
                     talker_num = 1
                 elif angle <= -angle_st:
                     talker_num = 2
-            elif retd == False:
-                talker_num = 0
+            elif retd == False:                         # ロボットを見つけられなかったら
+                talker_num = 0                          # 停止
 
         try:
             es.talker(talker_num)
