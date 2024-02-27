@@ -512,6 +512,146 @@ class Estimation:
             self.ret_robot = False
         return False,None,None,None
 
+class ObstacleCandidatesFinder:
+    def __init__(self, cap):
+        self.cap = cap
+        _, self.frame = cap.read()
+        # 背景モデルとクリックした色を保持するリストを初期化
+        self.background_models = []
+        self.clicked_colors = []
+
+        # ウィンドウにマウスイベントを関連付ける
+        cv2.namedWindow('Obstacle Candidates')
+        cv2.setMouseCallback('Obstacle Candidates', self.on_mouse_click)
+
+        # 遮蔽物検出座標を保持する変数
+        self.obstacle_coordinates = None
+
+    def on_mouse_click(self, event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            # クリックした位置の色を取得
+            clicked_color = self.frame[y, x]
+            print("クリックした色:", clicked_color)
+
+            # クリックした色を背景モデルに追加
+            self.clicked_colors.append(clicked_color)
+
+            # 背景モデルを更新（クリックした色ごとに異なる閾値を持つ）
+            self.update_background_model()
+        elif event == cv2.EVENT_MBUTTONDOWN:  # ホイールクリック
+            # ホイールクリックで遮蔽物検出座標を設定
+            self.obstacle_coordinates = [(0, y), (self.frame.shape[1], y), (self.frame.shape[1], self.frame.shape[0]), (0, self.frame.shape[0])]
+
+    def update_background_model(self):
+        if self.clicked_colors:
+            for color in self.clicked_colors:
+                # クリックした色ごとに閾値を持つ背景モデルを作成
+                model = {
+                    'color': color,
+                    'threshold': 30,  # 初期の閾値
+                }
+                self.background_models.append(model)
+    
+    def remove_noise(self, img):
+        # ノイズ除去
+        kernel_noise = np.ones((3, 3), np.uint8)
+        img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel_noise)
+
+        # より細かいノイズ除去
+        kernel_detail = np.ones((2, 2), np.uint8)
+        img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel_detail)
+
+        # 膨張処理と収縮処理
+        img = cv2.dilate(img, kernel_noise, iterations=3)
+        img = cv2.erode(img, kernel_noise, iterations=3)
+
+        return img
+
+    def preprocess_floor_image(self, floor_image):
+        # 白黒反転
+        inverted_image = cv2.bitwise_not(floor_image)
+
+        # 白黒反転させた画像も表示
+        #cv2.imshow('Inverted Image', inverted_image)
+
+        # グレースケールに変換
+        gray_image = cv2.cvtColor(inverted_image, cv2.COLOR_BGR2GRAY)
+
+        # ノイズ除去
+        gray_image = self.remove_noise(gray_image)
+
+        # 白い領域の輪郭を検出
+        contours, _ = cv2.findContours(gray_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # 一定サイズ以上の白い領域に対して四角形を描画
+        min_contour_area = 500  # 領域の最小面積
+        obstacle_image = inverted_image.copy()
+        candidate_rectangles = []  # 遮蔽物の候補となる四角形の外接矩形を保存するリスト
+        for contour in contours:
+            contour_area = cv2.contourArea(contour)
+            if contour_area > min_contour_area:
+                x, y, w, h = cv2.boundingRect(contour)
+                # 画像の端にある四角形は除外
+                if x > 0 and y > 0 and x + w < floor_image.shape[1]: #and y + h < floor_image.shape[0]:
+                    candidate_rectangles.append((x, y, x + w, y + h))
+
+        # 外接矩形同士の包含関係をチェックし、完全に含まれている四角形を遮蔽物の候補から除外
+        refined_candidate_rectangles = []  # 除外される四角形以外の四角形を保存するリスト
+        for i in range(len(candidate_rectangles)):
+            included = False
+            x1, y1, x2, y2 = candidate_rectangles[i]
+            for j in range(len(candidate_rectangles)):
+                if i != j:
+                    x3, y3, x4, y4 = candidate_rectangles[j]
+                    if x1 >= x3 and y1 >= y3 and x2 <= x4 and y2 <= y4:
+                        # 四角形iが四角形jに完全に含まれている場合、includedをTrueに設定して除外する
+                        included = True
+                        break
+            if not included:
+                refined_candidate_rectangles.append(candidate_rectangles[i])
+
+        # 遮蔽物の候補の四角形を描画
+        for rect in refined_candidate_rectangles:
+            x1, y1, x2, y2 = rect
+            cv2.rectangle(obstacle_image, (x1, y1), (x2, y2), (0, 0, 255), thickness=2)
+
+        self.obstacle_candidates = refined_candidate_rectangles.copy()
+
+        return obstacle_image
+
+
+
+    def run(self):
+        ret, self.frame = self.cap.read()
+        if ret:
+            if self.obstacle_coordinates:
+                # 遮蔽物検出座標が設定されている場合は、床を黒、遮蔽物を赤で表示
+                floor_mask = np.zeros_like(self.frame, dtype=np.uint8)
+                cv2.fillPoly(floor_mask, [np.array(self.obstacle_coordinates)], color=(255, 255, 255))
+
+                # クリップされた床領域に対して遮蔽物検出を行う
+                if self.background_models:
+                    combined_diff = np.zeros_like(self.frame)
+
+                    for model in self.background_models:
+                        # クリックした色ごとの背景差分を作成
+                        mask = cv2.inRange(self.frame, model['color'] - model['threshold'], model['color'] + model['threshold'])
+                        combined_diff = cv2.bitwise_or(combined_diff, cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR))
+
+                    result = cv2.bitwise_and(combined_diff, floor_mask)
+
+                    # 床領域にトリミング
+                    floor_image = result[self.obstacle_coordinates[0][1]:self.obstacle_coordinates[2][1], self.obstacle_coordinates[0][0]:self.obstacle_coordinates[1][0]]
+
+                    # 床検出画像の前処理
+                    processed_floor_image = self.preprocess_floor_image(floor_image)
+
+                    cv2.imshow('Obstacle Detection', processed_floor_image)
+                else:
+                    # 背景モデルが存在しない場合は、オリジナル画像を表示
+                    cv2.imshow('Obstacle Detection', self.frame)
+
+            cv2.imshow('Obstacle Candidates', self.frame)
 
 
 def main():
@@ -540,7 +680,6 @@ def main():
     _, frame1 = cap1.read()           #カメラからの画像取得
     gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
     cv2.imshow('camera1' , frame1)
-
 
     objpoints.append(objp)      # object point
 
@@ -584,6 +723,8 @@ def main():
     angle_st = 5
     distance_st = 0.1
 
+    ocf = ObstacleCandidatesFinder(cap1)
+
     rospy.init_node('Space')
     while True:
         talker_num = 0
@@ -593,6 +734,9 @@ def main():
         img_axes = draw(img_axes,corners12,imgpts)
         #frame1 = cv2.resize(frame1,dsize=(frame1.shape[1]*2,frame1.shape[0]*2))
         if ret:
+            ocf.run()
+            ####ocf.obstacle_candidates
+
             img_axes = es.line_update(img_axes)
             cv2.imshow('camera1', img_axes)      #カメラの画像の出力
 
