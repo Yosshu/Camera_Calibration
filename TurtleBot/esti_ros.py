@@ -170,6 +170,7 @@ class Estimation:
 
         self.robot_front_i = []
         self.robot_back_i = []
+        self.robot_i = []
 
         self.robot_w = []
         self.robot_vector = []
@@ -447,6 +448,9 @@ class Estimation:
                 ret4 = False
 
         if ret4:                                                                                             # ロボットが見つかったら
+            robot_ix = (self.robot_front_i[0]+self.robot_back_i[0])/2
+            robot_iy = (self.robot_front_i[1]+self.robot_back_i[1])/2
+            self.robot_i = [robot_ix, robot_iy]
             self.ret_robot = True
             #robot_front_i = [(corners[0][0][0][0]+corners[0][0][1][0])/2,(corners[0][0][0][1]+corners[0][0][1][1])/2]
             #robot_back_i  = [(corners[0][0][2][0]+corners[0][0][3][0])/2,(corners[0][0][2][1]+corners[0][0][3][1])/2]
@@ -460,8 +464,6 @@ class Estimation:
             self.robot_w = [robot_wx,robot_wy,0.5]
             robot_w_xy = np.array([robot_wx,robot_wy])          # ロボットのワールド座標のXw,Yw
 
-            robot_ix = (self.robot_front_i[0]+self.robot_back_i[0])/2
-            robot_iy = (self.robot_front_i[1]+self.robot_back_i[1])/2
             if (self.LRMclick == 'L' or self.LRMclick == 'R2'):                                              # 左クリックか右クリックしていたら
                 target_w_xy = np.array([self.target_w[0],self.target_w[1]]) # 目標位置のワールド座標のXw,Yw
                 target_vector = np.array(target_w_xy - robot_w_xy)  # 目的方向のベクトル
@@ -475,7 +477,7 @@ class Estimation:
                     arrow_color = (255, 165, 0)
 
                 cv2.arrowedLine(img2,                                # 矢印
-                    pt1=(int(robot_ix), int(robot_iy)),
+                    pt1=(int(self.robot_i[0]), int(self.robot_i[1])),
                     pt2=(int(self.target_i[0]), int(self.target_i[1])),
                     color=arrow_color,
                     thickness=3,
@@ -492,13 +494,12 @@ class Estimation:
                 target_vector_y = horizontal_line[0] * math.sin(self.input_angle) + horizontal_line[1] * math.cos(self.input_angle)
                 target_vector = [target_vector_x, target_vector_y]
                 angle = tangent_angle(self.robot_vector,target_vector)   # ロボットの向きと目標方向の角度差
-                #print([-robot_ix+target_vector_x,-robot_iy+target_vector_y,-0.5])
 
                 target_w = np.float32([robot_wx+target_vector_x,robot_wy+target_vector_y,-0.5]).reshape(-1,3)
                 target_i, _ = cv2.projectPoints(target_w, self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
                 self.target_i = [target_i[0][0][0],target_i[0][0][1]]
                 cv2.arrowedLine(img2,                                # 矢印
-                    pt1=(int(robot_ix), int(robot_iy)),
+                    pt1=(int(self.robot_i[0]), int(self.robot_i[1])),
                     pt2=(int(self.target_i[0]), int(self.target_i[1])),
                     color=(255, 165, 0),
                     thickness=3,
@@ -512,8 +513,25 @@ class Estimation:
             self.ret_robot = False
         return False,None,None,None
 
+
+    def find_robot_silhouette(self):
+        if self.ret_robot:
+            wid = 65
+            robot_silhouette = [(int(self.robot_i[0]-wid), int(self.robot_i[1]-50)), (int(self.robot_i[0]+wid), int(self.robot_i[1]+100))]
+            """
+            img = self.img.copy()
+            cv2.rectangle(img, robot_silhouette[0], robot_silhouette[1], (0, 0, 255), thickness=2)
+            cv2.imshow("silhouette", img)
+            """
+            return robot_silhouette
+        return 0
+
+
+
+
 class ObstacleCandidatesFinder:
-    def __init__(self, cap):
+    def __init__(self, cap, es):
+        self.es = es
         self.cap = cap
         _, self.frame = cap.read()
         # 背景モデルとクリックした色を保持するリストを初期化
@@ -525,7 +543,7 @@ class ObstacleCandidatesFinder:
         cv2.setMouseCallback('Obstacle Candidates', self.on_mouse_click)
 
         # 遮蔽物検出座標を保持する変数
-        self.obstacle_coordinates = None
+        self.floor_border = None
 
     def on_mouse_click(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -540,7 +558,7 @@ class ObstacleCandidatesFinder:
             self.update_background_model()
         elif event == cv2.EVENT_MBUTTONDOWN:  # ホイールクリック
             # ホイールクリックで遮蔽物検出座標を設定
-            self.obstacle_coordinates = [(0, y), (self.frame.shape[1], y), (self.frame.shape[1], self.frame.shape[0]), (0, self.frame.shape[0])]
+            self.floor_border = [(0, y), (self.frame.shape[1], y), (self.frame.shape[1], self.frame.shape[0]), (0, self.frame.shape[0])]
 
     def update_background_model(self):
         if self.clicked_colors:
@@ -571,6 +589,10 @@ class ObstacleCandidatesFinder:
         # 白黒反転
         inverted_image = cv2.bitwise_not(floor_image)
 
+        robot_silhouette = self.es.find_robot_silhouette()
+        if robot_silhouette != 0:
+            inverted_image[robot_silhouette[0][1]-self.floor_border[0][1]:robot_silhouette[1][1]-self.floor_border[0][1], robot_silhouette[0][0]:robot_silhouette[1][0]] = [0, 0, 0]  # BGR形式で黒色を指定
+
         # 白黒反転させた画像も表示
         #cv2.imshow('Inverted Image', inverted_image)
 
@@ -584,7 +606,7 @@ class ObstacleCandidatesFinder:
         contours, _ = cv2.findContours(gray_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # 一定サイズ以上の白い領域に対して四角形を描画
-        min_contour_area = 500  # 領域の最小面積
+        min_contour_area = 1000  # 領域の最小面積
         obstacle_image = inverted_image.copy()
         candidate_rectangles = []  # 遮蔽物の候補となる四角形の外接矩形を保存するリスト
         for contour in contours:
@@ -619,15 +641,13 @@ class ObstacleCandidatesFinder:
 
         return obstacle_image
 
-
-
     def run(self):
         ret, self.frame = self.cap.read()
         if ret:
-            if self.obstacle_coordinates:
+            if self.floor_border:
                 # 遮蔽物検出座標が設定されている場合は、床を黒、遮蔽物を赤で表示
                 floor_mask = np.zeros_like(self.frame, dtype=np.uint8)
-                cv2.fillPoly(floor_mask, [np.array(self.obstacle_coordinates)], color=(255, 255, 255))
+                cv2.fillPoly(floor_mask, [np.array(self.floor_border)], color=(255, 255, 255))
 
                 # クリップされた床領域に対して遮蔽物検出を行う
                 if self.background_models:
@@ -641,7 +661,7 @@ class ObstacleCandidatesFinder:
                     result = cv2.bitwise_and(combined_diff, floor_mask)
 
                     # 床領域にトリミング
-                    floor_image = result[self.obstacle_coordinates[0][1]:self.obstacle_coordinates[2][1], self.obstacle_coordinates[0][0]:self.obstacle_coordinates[1][0]]
+                    floor_image = result[self.floor_border[0][1]:self.floor_border[2][1], self.floor_border[0][0]:self.floor_border[1][0]]
 
                     # 床検出画像の前処理
                     processed_floor_image = self.preprocess_floor_image(floor_image)
@@ -652,6 +672,8 @@ class ObstacleCandidatesFinder:
                     cv2.imshow('Obstacle Detection', self.frame)
 
             cv2.imshow('Obstacle Candidates', self.frame)
+
+
 
 
 def main():
@@ -723,7 +745,7 @@ def main():
     angle_st = 5
     distance_st = 0.1
 
-    ocf = ObstacleCandidatesFinder(cap1)
+    ocf = ObstacleCandidatesFinder(cap1, es)
 
     rospy.init_node('Space')
     while True:
@@ -743,7 +765,6 @@ def main():
             retd, angle, distance, LRM = es.angleDiff(frame1,img_axes)
             
             if retd:
-                #print(angle)
                 if -angle_st < angle < angle_st:        # 目的方向を向いていたら
                     if LRM == 'L':                      # 左クリックしていたら
                         if distance > distance_st:      # 目的地から離れていたら
