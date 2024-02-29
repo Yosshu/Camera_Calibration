@@ -433,11 +433,11 @@ class Estimation:
         ret3 = ret1 and ret2
         self.robot_front_i, self.robot_back_i = nearest(ret3, reds_i, greens_i, *crop_pt1_i)
         self.find_robot_approx_loc()
-        if self.robot_approx_loc:
+        """if self.robot_approx_loc:
             # 四角形を描画
             img12 = img2.copy()
             cv2.rectangle(img12, (int(self.robot_approx_loc[0][0]), int(self.robot_approx_loc[0][1])), (int(self.robot_approx_loc[1][0]), int(self.robot_approx_loc[1][1])), (0, 255, 255), thickness=2)
-            cv2.imshow("img12",img12)
+            cv2.imshow("img12",img12)"""
 
 
         ret4 = False
@@ -527,8 +527,6 @@ class Estimation:
         return 0
 
 
-
-
 class ObstacleCandidatesFinder:
     def __init__(self, cap, es):
         self.es = es
@@ -543,13 +541,12 @@ class ObstacleCandidatesFinder:
         cv2.setMouseCallback('Obstacle Candidates', self.on_mouse_click)
 
         # 遮蔽物検出座標を保持する変数
-        self.floor_border = None
+        self.floor_range = None
 
     def on_mouse_click(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
             # クリックした位置の色を取得
             clicked_color = self.frame[y, x]
-            print("クリックした色:", clicked_color)
 
             # クリックした色を背景モデルに追加
             self.clicked_colors.append(clicked_color)
@@ -558,7 +555,8 @@ class ObstacleCandidatesFinder:
             self.update_background_model()
         elif event == cv2.EVENT_MBUTTONDOWN:  # ホイールクリック
             # ホイールクリックで遮蔽物検出座標を設定
-            self.floor_border = [(0, y), (self.frame.shape[1], y), (self.frame.shape[1], self.frame.shape[0]), (0, self.frame.shape[0])]
+            self.floor_range = [(0, y), (self.frame.shape[1], y), (self.frame.shape[1], self.frame.shape[0]), (0, self.frame.shape[0])]
+            print(y)
 
     def update_background_model(self):
         if self.clicked_colors:
@@ -591,7 +589,7 @@ class ObstacleCandidatesFinder:
 
         robot_silhouette = self.es.find_robot_silhouette()
         if robot_silhouette != 0:
-            inverted_image[robot_silhouette[0][1]-self.floor_border[0][1]:robot_silhouette[1][1]-self.floor_border[0][1], robot_silhouette[0][0]:robot_silhouette[1][0]] = [0, 0, 0]  # BGR形式で黒色を指定
+            inverted_image[robot_silhouette[0][1]-self.floor_range[0][1]:robot_silhouette[1][1]-self.floor_range[0][1], robot_silhouette[0][0]:robot_silhouette[1][0]] = [0, 0, 0]  # BGR形式で黒色を指定
 
         # 白黒反転させた画像も表示
         #cv2.imshow('Inverted Image', inverted_image)
@@ -606,7 +604,7 @@ class ObstacleCandidatesFinder:
         contours, _ = cv2.findContours(gray_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # 一定サイズ以上の白い領域に対して四角形を描画
-        min_contour_area = 1000  # 領域の最小面積
+        min_contour_area = 1400  # 領域の最小面積
         obstacle_image = inverted_image.copy()
         candidate_rectangles = []  # 遮蔽物の候補となる四角形の外接矩形を保存するリスト
         for contour in contours:
@@ -639,15 +637,39 @@ class ObstacleCandidatesFinder:
 
         self.obstacle_candidates = refined_candidate_rectangles.copy()
 
+        ####ここにself.choose_obstacle()################
+
         return obstacle_image
+
+
+    def choose_obstacle(self):
+        if not self.obstacle_candidates:
+            return None
+
+        # 画像の中心座標を計算
+        height, width = self.frame.shape[:2]
+        image_center = (width // 2, height // 2)
+
+        min_distance = float('inf')
+        chosen_obstacle = None
+
+        # 遮蔽物候補の中で中心に最も近いものを選択
+        for rect in self.obstacle_candidates:
+            rect_center = ((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
+            distance = np.sqrt((rect_center[0] - image_center[0]) ** 2 + (rect_center[1] - image_center[1]) ** 2)
+            if distance < min_distance:
+                min_distance = distance
+                chosen_obstacle = rect
+        return chosen_obstacle
+
 
     def run(self):
         ret, self.frame = self.cap.read()
         if ret:
-            if self.floor_border:
+            if self.floor_range:
                 # 遮蔽物検出座標が設定されている場合は、床を黒、遮蔽物を赤で表示
                 floor_mask = np.zeros_like(self.frame, dtype=np.uint8)
-                cv2.fillPoly(floor_mask, [np.array(self.floor_border)], color=(255, 255, 255))
+                cv2.fillPoly(floor_mask, [np.array(self.floor_range)], color=(255, 255, 255))
 
                 # クリップされた床領域に対して遮蔽物検出を行う
                 if self.background_models:
@@ -661,7 +683,7 @@ class ObstacleCandidatesFinder:
                     result = cv2.bitwise_and(combined_diff, floor_mask)
 
                     # 床領域にトリミング
-                    floor_image = result[self.floor_border[0][1]:self.floor_border[2][1], self.floor_border[0][0]:self.floor_border[1][0]]
+                    floor_image = result[self.floor_range[0][1]:self.floor_range[2][1], self.floor_range[0][0]:self.floor_range[1][0]]
 
                     # 床検出画像の前処理
                     processed_floor_image = self.preprocess_floor_image(floor_image)
@@ -674,6 +696,18 @@ class ObstacleCandidatesFinder:
             cv2.imshow('Obstacle Candidates', self.frame)
 
 
+def automode(es, ocf, img):
+    es.R_panel_color = [103, 113, 255]
+    es.G_panel_color = [144, 170, 68]
+
+    # 床の色を背景モデルに追加
+    ocf.clicked_colors.append(np.array([168, 178, 163]))
+    ocf.clicked_colors.append(np.array([193, 179, 174]))
+    ocf.clicked_colors.append(np.array([137, 150, 132]))
+    # 背景モデルを更新（色ごとに異なる閾値を持つ）
+    ocf.update_background_model()
+
+    ocf.floor_range = [(0, 174), (img.shape[1], 174), (img.shape[1], img.shape[0]), (0, img.shape[0])]
 
 
 def main():
@@ -792,6 +826,8 @@ def main():
             cap1.release()
             cv2.destroyAllWindows()
             break
+        elif key == ord("a"):
+            automode(es, ocf, frame1)
 
 if __name__ == "__main__":
     main()
