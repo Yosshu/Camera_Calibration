@@ -64,12 +64,11 @@ def findSquare(img, bgr):                  # 指定したBGRの輪郭の中心�
     img_mask = cv2.bitwise_and(img, img, mask = mask)
     img_mask_gray = cv2.cvtColor(img_mask, cv2.COLOR_BGR2GRAY)
     _, img_mask_bin = cv2.threshold(img_mask_gray, 0, 255, cv2.THRESH_BINARY)
-    #cv2.imshow('img_bin',img_mask_bin)
 
     contours = cv2.findContours(img_mask_bin, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[0]
 
     # 面積が一定以上の輪郭のみ残す。
-    area_thresh = 100
+    area_thresh = 500
     contours = list(filter(lambda x: cv2.contourArea(x) > area_thresh, contours))
     ret = False
     center = 0
@@ -81,7 +80,13 @@ def findSquare(img, bgr):                  # 指定したBGRの輪郭の中心�
         center = [x+(width/2),y+(height/2)]
         centers.append(center)
         # 描画する。
-        cv2.rectangle(img, (x, y), (x + width, y + height), color=(255, g, r), thickness=2)
+        img2 = img.copy()
+        cv2.rectangle(img2, (x, y), (x + width, y + height), color=(255, g, r), thickness=2)
+        if r > g:
+            cv2.imshow('img_red',img2)
+        else:
+            cv2.imshow('img_green',img2)
+
         ret = True
     centers = np.array(centers).reshape(-1,2)
     return ret, centers
@@ -211,22 +216,24 @@ class Estimation:
             datadata = data.data
             depu = datadata[0]
             depv = datadata[1]
-            depth = datadata[2]
+            self.depth = datadata[2]
 
             #print(f'{depth} cm')
             robot_direction = np.arctan2(self.robot_vector[1],self.robot_vector[0])
             robot_cos = math.cos(robot_direction)
             robot_sin = math.sin(robot_direction)
-            obj_w_x = (self.robot_w[0]*self.scale) + ((depth+self.robotcam_len) * robot_cos)
-            obj_w_y = (self.robot_w[1]*self.scale) + ((depth+self.robotcam_len) * robot_sin)
+            obj_w_x = (self.robot_w[0]*self.scale) + ((self.depth+self.robotcam_len) * robot_cos)
+            obj_w_y = (self.robot_w[1]*self.scale) + ((self.depth+self.robotcam_len) * robot_sin)
 
-            height = self.getHeight(depv,depth)
+            height = self.getHeight(depv,self.depth)
 
-            width = self.getWidth(depu,depth)
+            width = self.getWidth(depu,self.depth)
             widthX = width*robot_sin
             widthY = width*robot_cos
 
-            print(f'{[round(obj_w_x+widthX,2), round(obj_w_y-widthY,2), round(self.robotcam_height+height,2)]} [cm]')
+            self.object_w = [round(obj_w_x+widthX,2), round(obj_w_y-widthY,2), round(self.robotcam_height+height,2)]
+
+            print(f'{self.object_w} [cm]')
 
 
     def getHeight(self,v,d):
@@ -244,49 +251,20 @@ class Estimation:
         self.pub.publish(num)
 
 
-
     def onMouse(self, event, x, y, flags, params):      # 1カメの画像に対するクリックイベント
         if self.click == 0:
             if event == cv2.EVENT_LBUTTONDOWN:      # 左クリック
                 self.click = 1
-                """
-                point_wx = input("Xw = ")
-                point_wy = input("Yw = ")
-                print()
-                if isfloat(point_wx) and isfloat(point_wy):
-                    point_wx = float(point_wx)/50
-                    point_wy = float(point_wy)/50
-                    self.target_w = [point_wx,point_wy,0.5]
-                    pointw = np.float32([point_wx,point_wy,-0.5]).reshape(-1,3)
-                    pointi, _ = cv2.projectPoints(pointw, self.rvecs[-1], self.tvecs[-1], self.mtx, self.dist)
-                    self.target_i = [pointi[0][0][0],pointi[0][0][1]]
-                else:"""
                 self.target_i = [x,y]
                 self.target_w = self.pointFixZ(x,y,0.5)
                 self.LRMclick = 'L'
                 self.click = 0
             elif event == cv2.EVENT_RBUTTONDOWN:    # 右クリック
                 self.click = 1
-                """
-                angle = input("angle: ")
-                print()
-                if isfloat(angle):
-                    self.input_angle = math.radians(float(angle))
-                    self.LRMclick = 'R'
-                else:"""
                 self.target_i = [x,y]
                 self.target_w = self.pointFixZ(x,y,0.5)
                 self.LRMclick = 'R2'
                 self.click = 0
-                """elif event == cv2.EVENT_MBUTTONDOWN:    # 中クリック
-                self.click = 1
-                res = self.pointFixZ(x,y,0)
-                res = [round(n*self.scale,2) for n in res]
-                print(f"{res} [cm]")
-                self.obj1_i1x = x
-                self.obj1_i1y = y
-                self.LRMclick = 'M'
-                self.click = 0"""
             elif event == cv2.EVENT_MBUTTONDOWN:    # 中クリック
                 self.click = 1
                 if self.RorG == "R":
@@ -442,7 +420,7 @@ class Estimation:
 
         ret4 = False
         if ret3:
-            if np.linalg.norm(self.robot_front_i-self.robot_back_i) < 50:
+            if np.linalg.norm(self.robot_front_i-self.robot_back_i) < 80:
                 ret4 = True
             else:
                 ret4 = False
@@ -527,6 +505,7 @@ class Estimation:
         return 0
 
 
+
 class ObstacleCandidatesFinder:
     def __init__(self, cap, es):
         self.es = es
@@ -556,7 +535,6 @@ class ObstacleCandidatesFinder:
         elif event == cv2.EVENT_MBUTTONDOWN:  # ホイールクリック
             # ホイールクリックで遮蔽物検出座標を設定
             self.floor_range = [(0, y), (self.frame.shape[1], y), (self.frame.shape[1], self.frame.shape[0]), (0, self.frame.shape[0])]
-            print(y)
 
     def update_background_model(self):
         if self.clicked_colors:
@@ -612,7 +590,7 @@ class ObstacleCandidatesFinder:
             if contour_area > min_contour_area:
                 x, y, w, h = cv2.boundingRect(contour)
                 # 画像の端にある四角形は除外
-                if x > 0 and y > 0 and x + w < floor_image.shape[1]: #and y + h < floor_image.shape[0]:
+                if x > 0 and y > 0 and x + w < floor_image.shape[1] and y + h < floor_image.shape[0]:
                     candidate_rectangles.append((x, y, x + w, y + h))
 
         # 外接矩形同士の包含関係をチェックし、完全に含まれている四角形を遮蔽物の候補から除外
@@ -630,14 +608,17 @@ class ObstacleCandidatesFinder:
             if not included:
                 refined_candidate_rectangles.append(candidate_rectangles[i])
 
-        # 遮蔽物の候補の四角形を描画
-        for rect in refined_candidate_rectangles:
-            x1, y1, x2, y2 = rect
-            cv2.rectangle(obstacle_image, (x1, y1), (x2, y2), (0, 0, 255), thickness=2)
-
         self.obstacle_candidates = refined_candidate_rectangles.copy()
 
-        ####ここにself.choose_obstacle()################
+        self.obstacle_candidate = self.choose_obstacle()
+
+        # 遮蔽物の候補の四角形を描画
+        """for rect in refined_candidate_rectangles:
+            x1, y1, x2, y2 = rect
+            cv2.rectangle(obstacle_image, (x1, y1), (x2, y2), (0, 0, 255), thickness=2)"""
+        if self.obstacle_candidate is not None:
+            x1, y1, x2, y2 = self.obstacle_candidate
+            cv2.rectangle(obstacle_image, (x1, y1), (x2, y2), (0, 0, 255), thickness=2)
 
         return obstacle_image
 
@@ -660,9 +641,41 @@ class ObstacleCandidatesFinder:
             if distance < min_distance:
                 min_distance = distance
                 chosen_obstacle = rect
+            if chosen_obstacle is not None:
+                self.obstacle_front = (int((chosen_obstacle[0]+chosen_obstacle[2])/2), int(chosen_obstacle[3]+self.floor_range[0][1]))
+        
         return chosen_obstacle
+    
+    def watch_obs_cand(self, o_switch):
+        if self.es.click == 0:      # 遮蔽物の手前まで移動
+            x = self.obstacle_front[0]
+            y = self.obstacle_front[1] + 40
+            self.es.click = 1
+            self.es.target_i = [x,y]
+            self.es.target_w = self.es.pointFixZ(x,y,0.5)
+            self.es.LRMclick = 'L'
+            self.es.click = 11
+        elif self.es.click == 12:     # 遮蔽物を向く
+            x = self.obstacle_front[0]
+            y = self.obstacle_front[1]
+            self.es.click = 1
+            self.es.target_i = [x,y]
+            self.es.target_w = self.es.pointFixZ(x,y,0.5)
+            self.es.LRMclick = 'R2'
+            self.es.click = 13
+        elif self.es.click == 14:
+            cv2.waitKey(0)
+            self.es.click = 15
+        elif self.es.click == 15:
+            print(self.es.depth)
+            if self.es.depth > 100:
+                self.es.click = 0
+                o_switch = False
+            else:
+                pass
+                print("経路生成")
 
-
+        
     def run(self):
         ret, self.frame = self.cap.read()
         if ret:
@@ -697,8 +710,8 @@ class ObstacleCandidatesFinder:
 
 
 def automode(es, ocf, img):
-    es.R_panel_color = [103, 113, 255]
-    es.G_panel_color = [144, 170, 68]
+    #es.R_panel_color = [103, 113, 255]
+    #es.G_panel_color = [144, 170, 68]
 
     # 床の色を背景モデルに追加
     ocf.clicked_colors.append(np.array([168, 178, 163]))
@@ -735,7 +748,7 @@ def main():
 
     _, frame1 = cap1.read()           #カメラからの画像取得
     gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
-    cv2.imshow('camera1' , frame1)
+    cv2.imshow('camera1', frame1)
 
     objpoints.append(objp)      # object point
 
@@ -776,8 +789,9 @@ def main():
 
     cv2.setMouseCallback('camera1', es.onMouse)         # 1カメの画像に対するクリックイベント
     
-    angle_st = 5
-    distance_st = 0.1
+    angle_st = 10
+    distance_st = 0.2
+    o_switch = False
 
     ocf = ObstacleCandidatesFinder(cap1, es)
 
@@ -796,8 +810,7 @@ def main():
             img_axes = es.line_update(img_axes)
             cv2.imshow('camera1', img_axes)      #カメラの画像の出力
 
-            retd, angle, distance, LRM = es.angleDiff(frame1,img_axes)
-            
+            retd, angle, distance, LRM = es.angleDiff(frame1, img_axes)
             if retd:
                 if -angle_st < angle < angle_st:        # 目的方向を向いていたら
                     if LRM == 'L':                      # 左クリックしていたら
@@ -806,9 +819,13 @@ def main():
                         else:                           # 目的地に到着したら
                             talker_num = 0              # 停止
                             es.LRMclick = None
+                            if es.click == 11:
+                                es.click = es.click + 1
                     elif LRM == 'R' or 'R2':            # 右クリックしていたら
                         talker_num = 0                  # 停止
                         es.LRMclick = None
+                        if es.click == 13:
+                            es.click = es.click + 1
                 elif angle_st <= angle:
                     talker_num = 1
                 elif angle <= -angle_st:
@@ -828,6 +845,12 @@ def main():
             break
         elif key == ord("a"):
             automode(es, ocf, frame1)
+        elif key == ord("o"):
+            o_switch = True
+        if o_switch == True:
+            ocf.watch_obs_cand(o_switch)
+            
+
 
 if __name__ == "__main__":
     main()
