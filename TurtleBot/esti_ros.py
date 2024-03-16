@@ -57,8 +57,8 @@ def findSquare(img, bgr):                  # 指定したBGRの輪郭の中心�
     v = int(hsv[2]*255)
     img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     
-    lower_color = np.array([h-10, s-60, v-120]) 
-    upper_color = np.array([h+10, s+60, v+120]) 
+    lower_color = np.array([h-6, s-70, v-120]) 
+    upper_color = np.array([h+6, s+70, v+120]) 
 
     mask = cv2.inRange(img_hsv, lower_color, upper_color) 
     img_mask = cv2.bitwise_and(img, img, mask = mask)
@@ -68,7 +68,7 @@ def findSquare(img, bgr):                  # 指定したBGRの輪郭の中心�
     contours = cv2.findContours(img_mask_bin, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[0]
 
     # 面積が一定以上の輪郭のみ残す。
-    area_thresh = 500
+    area_thresh = 200
     contours = list(filter(lambda x: cv2.contourArea(x) > area_thresh, contours))
     ret = False
     center = 0
@@ -569,28 +569,29 @@ class ObstacleCandidatesFinder:
         if robot_silhouette != 0:
             inverted_image[robot_silhouette[0][1]-self.floor_range[0][1]:robot_silhouette[1][1]-self.floor_range[0][1], robot_silhouette[0][0]:robot_silhouette[1][0]] = [0, 0, 0]  # BGR形式で黒色を指定
 
-        # 白黒反転させた画像も表示
-        #cv2.imshow('Inverted Image', inverted_image)
-
         # グレースケールに変換
         gray_image = cv2.cvtColor(inverted_image, cv2.COLOR_BGR2GRAY)
+        # 白黒反転させた画像も表示
+        cv2.imshow('Inverted Image', gray_image)
 
         # ノイズ除去
-        gray_image = self.remove_noise(gray_image)
+        unnoise_image = self.remove_noise(gray_image)
+
+        cv2.imshow("unnoise", unnoise_image)
 
         # 白い領域の輪郭を検出
-        contours, _ = cv2.findContours(gray_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(unnoise_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # 一定サイズ以上の白い領域に対して四角形を描画
         min_contour_area = 1400  # 領域の最小面積
-        obstacle_image = inverted_image.copy()
+        obstacle_image = cv2.cvtColor(unnoise_image, cv2.COLOR_GRAY2BGR)
         candidate_rectangles = []  # 遮蔽物の候補となる四角形の外接矩形を保存するリスト
         for contour in contours:
             contour_area = cv2.contourArea(contour)
             if contour_area > min_contour_area:
                 x, y, w, h = cv2.boundingRect(contour)
                 # 画像の端にある四角形は除外
-                if x > 0 and y > 0 and x + w < floor_image.shape[1] and y + h < floor_image.shape[0]:
+                if y > 0: #x > 0 and x + w < floor_image.shape[1] and y + h < floor_image.shape[0]
                     candidate_rectangles.append((x, y, x + w, y + h))
 
         # 外接矩形同士の包含関係をチェックし、完全に含まれている四角形を遮蔽物の候補から除外
@@ -613,9 +614,12 @@ class ObstacleCandidatesFinder:
         self.obstacle_candidate = self.choose_obstacle()
 
         # 遮蔽物の候補の四角形を描画
-        """for rect in refined_candidate_rectangles:
+        all_obs = obstacle_image.copy()
+        for rect in refined_candidate_rectangles:
             x1, y1, x2, y2 = rect
-            cv2.rectangle(obstacle_image, (x1, y1), (x2, y2), (0, 0, 255), thickness=2)"""
+            cv2.rectangle(all_obs, (x1, y1), (x2, y2), (0, 0, 255), thickness=2)
+        cv2.imshow("all_obs", all_obs)
+
         if self.obstacle_candidate is not None:
             x1, y1, x2, y2 = self.obstacle_candidate
             cv2.rectangle(obstacle_image, (x1, y1), (x2, y2), (0, 0, 255), thickness=2)
@@ -632,7 +636,7 @@ class ObstacleCandidatesFinder:
         image_center = (width // 2, height // 2)
 
         min_distance = float('inf')
-        chosen_obstacle = None
+        self.chosen_obstacle = None
 
         # 遮蔽物候補の中で中心に最も近いものを選択
         for rect in self.obstacle_candidates:
@@ -640,11 +644,11 @@ class ObstacleCandidatesFinder:
             distance = np.sqrt((rect_center[0] - image_center[0]) ** 2 + (rect_center[1] - image_center[1]) ** 2)
             if distance < min_distance:
                 min_distance = distance
-                chosen_obstacle = rect
-            if chosen_obstacle is not None:
-                self.obstacle_front = (int((chosen_obstacle[0]+chosen_obstacle[2])/2), int(chosen_obstacle[3]+self.floor_range[0][1]))
+                self.chosen_obstacle = rect
+            if self.chosen_obstacle is not None:
+                self.obstacle_front = (int((self.chosen_obstacle[0]+self.chosen_obstacle[2])/2), int(self.chosen_obstacle[3]+self.floor_range[0][1]))
         
-        return chosen_obstacle
+        return self.chosen_obstacle
     
     def watch_obs_cand(self, o_switch):
         if self.es.click == 0:      # 遮蔽物の手前まで移動
@@ -667,13 +671,35 @@ class ObstacleCandidatesFinder:
             cv2.waitKey(0)
             self.es.click = 15
         elif self.es.click == 15:
-            print(self.es.depth)
-            if self.es.depth > 100:
+            if self.es.depth > 100:     # 遮蔽物でなければ，終了
                 self.es.click = 0
                 o_switch = False
-            else:
-                pass
-                print("経路生成")
+            else:                       # 遮蔽物であれば，まずロボットが遮蔽物の右前に移動
+                x = self.chosen_obstacle[2] + 60
+                y = self.obstacle_front[1] + 40
+                self.es.target_i = [x,y]
+                self.es.target_w = self.es.pointFixZ(x,y,0.5)
+                self.es.LRMclick = 'L'
+                self.es.click = 16
+        elif self.es.click == 17:       # ロボットが遮蔽物の右後ろに移動
+            x = self.chosen_obstacle[2] + 60
+            y = self.chosen_obstacle[1] - 20
+            self.es.target_i = [x,y]
+            self.es.target_w = self.es.pointFixZ(x,y,0.5)
+            self.es.LRMclick = 'L'
+            self.es.click = 18
+        elif self.es.click == 19:     # ロボットが遮蔽物の裏側を見る
+            x = self.chosen_obstacle[0]
+            y = self.chosen_obstacle[3]
+            self.es.target_i = [x,y]
+            self.es.target_w = self.es.pointFixZ(x,y,0.5)
+            self.es.LRMclick = 'R2'
+        elif self.es.click == 20:
+            o_switch = False
+            self.es.click = 0
+            print("ロボットが死角を撮影中")
+        return o_switch
+
 
         
     def run(self):
@@ -720,7 +746,8 @@ def automode(es, ocf, img):
     # 背景モデルを更新（色ごとに異なる閾値を持つ）
     ocf.update_background_model()
 
-    ocf.floor_range = [(0, 174), (img.shape[1], 174), (img.shape[1], img.shape[0]), (0, img.shape[0])]
+    #ocf.floor_range = [(0, 174), (img.shape[1], 174), (img.shape[1], img.shape[0]), (0, img.shape[0])]
+    ocf.floor_range = [(0, 0), (img.shape[1], 0), (img.shape[1], img.shape[0]), (0, img.shape[0])]
 
 
 def main():
@@ -743,8 +770,8 @@ def main():
 
     cap1 = cv2.VideoCapture(0)          #カメラの設定　デバイスIDは0
     # カメラの解像度を設定
-    cap1.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)  # 幅の設定
-    cap1.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)  # 高さの設定
+    cap1.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # 幅の設定
+    cap1.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # 高さの設定
 
     _, frame1 = cap1.read()           #カメラからの画像取得
     gray = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
@@ -764,7 +791,7 @@ def main():
     mtx = np.array([1.01644397e+03, 0.00000000e+00, 6.87903319e+02, 0.00000000e+00, 1.01960682e+03, 3.37505807e+02, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]).reshape(3,3)
     dist = np.array([-4.31940522e-01, 2.19409920e-01, -4.78545150e-05, 1.18269452e-03, -7.07910142e-02])
 
-    corners = np.array([389, 267, 494, 264, 604, 263, 718, 262, 831, 261, 937, 261, 364, 338, 478, 337, 599, 335, 723, 335, 846, 334, 961, 332, 336, 424, 460, 424, 592, 424, 729, 424, 863, 420, 984, 417, 309, 523, 440, 528, 585, 531, 736, 531, 882, 525, 1011, 521, 279, 639, 420, 651, 577, 658, 743, 656, 904, 651, 1044, 636],dtype='float32').reshape(-1,1,2)
+    corners = np.array([154, 177, 224, 176, 297, 174, 372, 174, 446, 173, 518, 174, 137, 224, 213, 224, 293, 223, 375, 222, 457, 222, 535, 221, 120, 281, 201, 282, 289, 282, 380, 281, 468, 280, 553, 276, 100, 348, 188, 351, 284, 353, 384, 353, 482, 349, 571, 344, 80, 424, 174, 432, 279, 436, 387, 436, 495, 431, 593, 422],dtype='float32').reshape(-1,1,2)
     corners12 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
     imgpoints.append(corners12)
 
@@ -819,12 +846,12 @@ def main():
                         else:                           # 目的地に到着したら
                             talker_num = 0              # 停止
                             es.LRMclick = None
-                            if es.click == 11:
+                            if es.click == 11 or es.click == 16 or es.click == 18:
                                 es.click = es.click + 1
                     elif LRM == 'R' or 'R2':            # 右クリックしていたら
                         talker_num = 0                  # 停止
                         es.LRMclick = None
-                        if es.click == 13:
+                        if es.click == 13 or es.click == 19:
                             es.click = es.click + 1
                 elif angle_st <= angle:
                     talker_num = 1
@@ -848,7 +875,7 @@ def main():
         elif key == ord("o"):
             o_switch = True
         if o_switch == True:
-            ocf.watch_obs_cand(o_switch)
+            o_switch = ocf.watch_obs_cand(o_switch)
             
 
 
